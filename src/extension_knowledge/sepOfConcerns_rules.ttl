@@ -10,14 +10,17 @@
 @prefix rdfs: <http://www.w3.org/2000/01/rdf-schema#> .
 @prefix ex: <http://foobar.org/> .
 
-ex:FourEyesConstraint a sh:NodeShape ;
+# TODO consider adding ontology as well
+
+ex:FourEyesConstraint a sh:PropertyShape ;
     sh:targetClass type:resource ;
+    sh:path relation:performedBy__hypothetical;
     sh:severity sh:Error;
     sh:sparql [
         a sh:SPARQLConstraint ;
-        sh:message "There is a four-eyes-principle violation with '{?value}'" ;
+        sh:message "There is a separation of concerns violation with activity '{?a2}'" ;
         sh:select """
-            SELECT  $this (relation:performedBy__hypothetical AS ?path) (?e2 AS ?value)
+            SELECT  $this (relation:performedBy__hypothetical AS ?path) ?a2
             WHERE {
                 $this ^relation:performedBy__hypothetical ?e1 .
                 $this ^relation:performedBy ?e2 .
@@ -33,15 +36,16 @@ ex:FourEyesConstraint a sh:NodeShape ;
     ] .
 
 # Reward rule, so the reasoning appears for fitting resources
-ex:FourEyesReward a sh:NodeShape ;
+ex:FourEyesReward a sh:PropertyShape ;
     sh:targetClass type:resource ;
+    sh:path relation:performedBy__hypothetical;
     sh:severity sh:Info;
     ex:value 5 ;
     sh:sparql [
         a sh:SPARQLConstraint ;
-        sh:message "Assignment conforms with four-eyes-principle with '{?othertask}'" ;
+        sh:message "Assignment conforms separation of concerns with activity '{?a2}'" ;
         sh:select """
-            SELECT  $this (relation:performedBy__hypothetical AS ?path) (?e2 AS ?othertask)
+            SELECT  $this (relation:performedBy__hypothetical AS ?path) ?a2
             WHERE {
                 $this ^relation:performedBy__hypothetical ?e1 .
                 ?r2 ^relation:performedBy ?e2 .

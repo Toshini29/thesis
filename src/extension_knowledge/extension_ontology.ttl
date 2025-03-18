@@ -7,6 +7,7 @@
 @prefix relation: <http://example.org/relations/> .
 @prefix type: <http://example.org/types/> .
 @prefix RiskClass: <http://example.org/instances/RiskClasss/> .
+@prefix Seniority: <http://example.org/instances/Senioritys/> .
 
 
 type:ApplicationType rdf:type owl:Class ;
@@ -40,3 +41,42 @@ type:RiskClass rdf:type owl:Class ;
 relation:RiskClass rdf:type owl:ObjectProperty, owl:FunctionalProperty ;
     rdfs:domain type:LoanGoal ;
     rdfs:range type:RiskClass .
+
+
+type:Seniority rdf:type owl:Class ;
+    rdfs:label "Seniority" ; 
+    owl:oneOf (Seniority:Low Seniority:Medium Seniority:High) .
+
+relation:minSeniority rdf:type owl:ObjectProperty, owl:FunctionalProperty ;
+    rdfs:domain type:RiskClass ;
+    rdfs:range type:Seniority .
+
+
+
+RiskClass:High a type:RiskClass ;
+    rdf:type owl:NamedIndividual ;
+    relation:minSeniority Seniority:High .
+
+RiskClass:Medium a type:RiskClass ;
+    rdf:type owl:NamedIndividual ;
+    relation:minSeniority Seniority:Medium .
+
+RiskClass:Low a type:RiskClass ;
+    rdf:type owl:NamedIndividual ;
+    relation:minSeniority Seniority:Low .
+
+
+Seniority:High a type:Seniority ;
+    rdf:type owl:NamedIndividual ;
+    relation:greaterEq Seniority:High,
+        Seniority:Low,
+        Seniority:Medium .
+
+Seniority:Medium a type:Seniority ;
+    rdf:type owl:NamedIndividual ;
+    relation:greaterEq Seniority:Low,
+        Seniority:Medium .
+
+Seniority:Low a type:Seniority ;
+    rdf:type owl:NamedIndividual ;
+    relation:greaterEq Seniority:Low .

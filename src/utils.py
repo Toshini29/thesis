@@ -1,4 +1,5 @@
 import re
+# Business Process Optimization Competition 2023
 from simulator import EventType
 from urllib.parse import quote, unquote
 
@@ -6,7 +7,7 @@ def uri_to_id(uri):
     return unquote(uri.split('/')[-1]) # TODO this assumes a specific id translation; replace
 
 def de_urify(string):
-    def replace_url(uri_match):
+    def replace_uri(uri_match):
         uri = uri_match.group(1)
         return '\'' + uri_to_id(uri) + '\''
     return re.sub(r"'(http://example.org.*?)'", replace_uri, string)
@@ -34,7 +35,7 @@ class Keys(enum.Enum):
         self.relationship_name = relationship_name
     
     CASE = 'case', 'partOf'
-    TASK = 'c', 'd'
+    TASK = 'task', None
     ACTIVITY = 'activity', 'instanceOf'
     RESOURCE = 'resource', 'performedBy'
     ROLE = 'role', 'hasRole'

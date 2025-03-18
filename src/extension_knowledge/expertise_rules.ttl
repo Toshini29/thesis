@@ -11,22 +11,22 @@
 @prefix ex: <http://foobar.org/> .
 
 
-@prefix ApplicationType: <http://example.org/instances/ApplicationTypes/> .
-
-ex:LikesConstraint a sh:NodeShape ;
+ex:LikesConstraint a sh:PropertyShape ;
     sh:targetClass type:resource ;
+    sh:path relation:performedBy__hypothetical;
     ex:value 5 ;
     sh:severity sh:Info;
     sh:sparql [
         a sh:SPARQLConstraint ;
-        sh:message "The resource '{$this}' likes to perform activities in cases of with attribute '{?value}'" ;
+        sh:message "Resource is an expert on '{?attributeType}' '{?caseAttr}'" ;
         sh:select """
-            SELECT  $this (relation:performedBy__hypothetical AS ?path) (?applicationtype as ?value)
+            SELECT  $this (relation:performedBy__hypothetical AS ?path) ?caseAttr ?attributeType
             WHERE {
                 $this ^relation:performedBy__hypothetical / relation:partOf ?case .
-                ?case ?relation ?applicationtype .
+                ?case ?relation ?caseAttr .
+                ?caseAttr rdf:type ?attributeType .
                 FILTER EXISTS { 
-                    $this relation:likes ?applicationtype .
+                    $this relation:expertOn ?caseAttr .
                 }
             }
         """ ;
