@@ -22,7 +22,7 @@ def case_id(task):
 class KGPlanner:
 
     def __init__(self, mode=Mode.AUTOMATED):
-        self.graph = ProcessKnowledgeGraph(entity_attributes=['ApplicationType', 'LoanGoal', Keys.ACTIVITY], case_attributes=['ApplicationType', 'LoanGoal'])
+        self.graph = ProcessKnowledgeGraph(entity_attributes=['ApplicationType', 'LoanGoal', Keys.ACTIVITY], case_attributes=['ApplicationType', 'LoanGoal']) # TODO add requested amount as case attribute?
         self.allocator = SHACLAllocator(self.graph)
         self.mode = mode
 
@@ -37,6 +37,9 @@ class KGPlanner:
             
         # assign the first unassigned task to the first available resource, the second task to the second resource, etc.
         for task in self.graph.unassigned_tasks():
+
+            if len(list(self.graph.available_resources())) < 2: #TODO temp to enforce decisions
+                break
 
             _task_label = uri_to_id(next(self.graph.objects(predicate=self.graph.attribute_relation(Keys.ACTIVITY), subject=task)))
             _case = uri_to_id(next(self.graph.objects(predicate=self.graph.attribute_relation(Keys.CASE), subject=task)))
@@ -58,6 +61,8 @@ class KGPlanner:
                 print(f"Assigning: {uri_to_id(resource)} to {uri_to_id(task)} considering the following: \n {reasoning}")
 
                 self.simulate_preference(task, resource)
+            else:
+                print('No assignment made')
 
         return assignments
     

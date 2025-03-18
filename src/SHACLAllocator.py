@@ -38,11 +38,7 @@ class SHACLAllocator:
         if instance_ext != None:
             self.graph_to_check.parse(instance_ext, **args)             
     
-    def get_resource(self, task_node, threshold=float('-inf')):
-            
-        if len(list(self.graph_to_check.available_resources())) < 2: #TODO temp to enforce decisions
-            return (float('-inf'), None, 'We need more drama')
-            
+    def get_resource(self, task_node, threshold=float('-inf')):            
         return next(iter(self.get_top_k_resources(task_node, k=1, threshold=threshold)), self.no_resource_found())
 
     def no_resource_found(self):
@@ -115,7 +111,8 @@ class SHACLAllocator:
                   meta_shacl=True,
                   advanced=True,
                   js=False,
-                  debug=False)
+                  debug=False,
+                  focus_nodes=[resource_node])
         finally:
             self.graph_to_check.remove(hypothetical)
         
