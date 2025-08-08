@@ -55,5 +55,6 @@ class ProcessKnowledgeGraph(Graph):
         _, uri = next(filter(lambda nsp : nsp[0] == prefix, self.namespace_manager.namespaces()))
         return uri + quote(id)
 
-
+    def add_rule(self, rule):
+        self.addN((s, p, o, URIRef('http://infs.cit.tum.de/karibdis/rules')) for s, p, o in rule) # TODO: magic string and also no thought put into this 
 

@@ -11,6 +11,15 @@ import pandas as pd
 from pandas.api.types import is_string_dtype, is_numeric_dtype, is_datetime64_any_dtype
 
 
+from langchain_openai import ChatOpenAI
+from langchain_core.prompts import ChatPromptTemplate
+from dotenv import load_dotenv
+
+from itertools import zip_longest
+
+
+
+
 # Copied and adapted from Business Process Optimization Competition 2023
 # https://github.com/bpogroup/bpo-project/
 class EventType(Enum):
@@ -70,10 +79,100 @@ class KnowledgeImporter(ABC):
         self.pkg = pkg
         self.addition_graph = Graph()
         copy_namespaces(self.addition_graph, self.pkg)
+        self.ui = ImporterJupyterUI(self)
 
     def add(self, triple):
         self.addition_graph.add(triple)
 
+    ### ===== Load =====
+    # Nothing to see here, is done in the subclasses, with varying entry points
+
+    ### ===== Alignment =====
+    def align(self, addition_node_filter=None, target_node_filter=None, addition_text_params={}, target_text_params={}):
+        
+        print('Textualizing graphs for alignment...')
+        addition_texts = textualize_graph(self.addition_graph, graph_annotations_properties(self.addition_graph, **addition_text_params), filter_func=addition_node_filter)
+        target_texts = textualize_graph(self.pkg, graph_annotations_properties(self.pkg, **target_text_params), filter_func=target_node_filter)
+        print('Calculating basic alignment...')
+        alignment = graph_alignment(addition_texts, target_texts)
+        reverse_alignment = graph_alignment(target_texts, addition_texts)
+
+        pairs = dict()
+        reverse_pairs = dict()
+        for source_id, result in alignment.items():
+            pairs.setdefault(source_id, set())
+            ranks, top_ids = result
+            for i, rank in enumerate(ranks):
+                target_id = top_ids[i]
+                reverse_pairs.setdefault(target_id, set())
+                if source_id in reverse_alignment[target_id][1]:
+                    pairs[source_id].add(target_id)
+                    reverse_pairs[target_id].add(source_id)
+                    
+        print('Trial by LLM...')
+        trial_by_llm = self.prepare_trial_by_llm() 
+        llm_approved = set()
+        for index, source_id in enumerate(pairs.keys()):
+                print(f'{index}/{len(alignment)}', end='\r')
+                matches = pairs[source_id]
+                if len(matches) > 0:
+                    # print(source_id.n3(addition_graph.namespace_manager))
+                    for target_id in matches:
+                        # print(f'\t{target_id.n3(target_graph.namespace_manager)}')
+                        if trial_by_llm(addition_texts[source_id], target_texts[target_id]):
+                            llm_approved.add((source_id, target_id))
+                            print(f'{source_id.n3(self.addition_graph.namespace_manager)} -> {target_id.n3(self.pkg.namespace_manager)}')
+        with self.ui:
+            self.ui.show_alignment_validation(llm_approved)
+
+    def apply_alignment(self, alignment_edges):
+        for s,p,o in filter(lambda triple: OWL.sameAs in triple, alignment_edges):
+            rename_identifier(self.addition_graph, s, o)
+
+    def prepare_trial_by_llm(self):
+        from langchain_openai import ChatOpenAI
+        from langchain_core.prompts import ChatPromptTemplate
+        from dotenv import load_dotenv
+        load_dotenv()
+
+
+        llm = ChatOpenAI(temperature=0, model="gpt-4o-mini")
+        prompt = ChatPromptTemplate.from_messages(
+            [
+                (
+                "system", # TODO prompt is currently very generous
+        '''You are a knowledge importer for a knowledge-graph-based business process management system.
+Your task is to decide whether two stringifications of knowledge graph are related to the same concept.
+Please output only True or False, whether the entities represented are related.''',
+                ),
+                ("human", "String 1:\n{str1}\n\n\nString 2:\n{str2}"),
+            ]
+        )
+        chain = prompt | llm
+
+        def trial_by_llm(source_text, target_text):
+            #print(prompt.format(str1=addition_texts[source_id], str2=target_texts[target_id]))
+            return chain.invoke(
+                {
+                    "str1": source_text,
+                    "str2": target_text,
+                }
+            ).content == 'True'
+        
+        return trial_by_llm
+
+    ### ===== Validate =====
+    def validate(self):
+        self.ui.show_validation()
+
+    def reload_from_text(self, text):
+        self.addition_graph = Graph() 
+        copy_namespaces(self.addition_graph, self.pkg)
+
+        self.addition_graph.parse(data=text, format='turtle')
+
+
+    ### ===== Load =====
     def load(self):
         self.load_namespaces()
         self.pkg += self.addition_graph
@@ -89,6 +188,11 @@ class KnowledgeImporter(ABC):
                     alias_to_bind = alias + index
                     index += 1
                 self.pkg.bind(alias_to_bind, namespace, override=True)
+
+
+    ### ===== Util =====    
+    def log(self, message):
+        print(message)
 
 #    @abstractmethod
 #    def import_event_log(self, log_dataframe):
@@ -113,9 +217,6 @@ class SimpleEventLogImporter(KnowledgeImporter):
         self.entity_columns = set(entity_columns).union(set([Keys.CASE, Keys.ACTIVITY]))
         self.value_columns = set(value_columns)
 
-    
-    def log(self, message):
-        print(message)
 
     def entity_instance_node(self, col : str, entity):
         return self.namespace[f'{quote(col)}_{quote(entity)}']
@@ -134,6 +235,8 @@ class SimpleEventLogImporter(KnowledgeImporter):
             if col_key not in self.ignore_columns:
 
                 is_entity_column, is_value_column = self.determine_col_type(col_key, log[col])
+
+                # TODO: Do something with case attributes vs. task attributes
 
                 if is_entity_column:
                     print('=> Entity column')
@@ -183,7 +286,7 @@ class SimpleEventLogImporter(KnowledgeImporter):
             return self.attribute_aliases[col].type_name, self.attribute_aliases[col].relationship_name
         else:
             # TODO infer proper entity type to be able to reuse existing types => That's the neat part: Do it in a transform step
-            return self.namespace['type_'+col], self.namespace['relation_'+col]
+            return self.namespace['type_'+quote(col)], self.namespace['relation_'+quote(col)]
     
 
     def infer_value_col_type(self, col):
@@ -280,9 +383,223 @@ class OnlineEventImporter(KnowledgeImporter):
     
 
 
+class TextualImporter(KnowledgeImporter):
+
+    
+    load_dotenv()
+
+    def __init__(self, pkg, llm=ChatOpenAI(temperature=0, model="gpt-4o-mini")):
+        super().__init__(pkg)
+        self.llm = llm
+
+    def import_content_from_statement(self, statement : str):
+        prompt = ChatPromptTemplate.from_messages(
+            [
+                (
+                    "system",
+'''You are a knowledge importer for a knowledge-graph-based business process management system.
+Your task is to input textual process knowledge and an existing knowledge graph and output new nodes and edges representing the knowledge of the text.
+Reuse existing owl:classes and owl:properties where appropriate. 
+Reuse existing entity nodes where appropriate.
+
+Please output the nodes and edges in RDF-turtle-syntax.
+Output nothing else. Don't output any notes or justifications.
+
+For generating the nodes and edges, please consider the following contextual schema information in OWL-RDF format and key entities in RDF format.  
+
+{context}''',
+                ),
+                ("human", "{statement}"),
+            ]
+        )
+        prompt_context = self.pkg.serialize(format='ttl')
+
+        chain = prompt | self.llm
+        response = chain.invoke(
+            {
+                "context": prompt_context,
+                "statement": statement,
+            }
+        ).content
+        self.log(response)
+        self.addition_graph.parse(data=f'{namespace_string(self.pkg)}\n\n{unwrap_markdown_code(response)}', format='turtle')
 
 
-class ImporterUI():
-    def __init__(self):
+class ExistingOntologyImporter(KnowledgeImporter):
+
+    def __init__(self, pkg : ProcessKnowledgeGraph):
+        super().__init__(pkg)
+
+    def import_ontology(self, ontology, initial_query=None):
+
+        def accept_filtered_result(result):
+            self.addition_graph += result
+            # Add predicates metadata so annotation properties can be used
+            predicates = set(self.addition_graph.predicates())
+            self.addition_graph += list(filter(lambda triple: triple[0] in predicates or triple[2] in predicates, ontology))
+
+        with self.ui:
+            self.ui.prompt_selection_query(ontology, callback_accept=accept_filtered_result, initial_query=initial_query)
+
+
+
+class ImporterUI(ABC):
+    def __init__(self, importer : KnowledgeImporter):
+        assert importer is not None
+        self.importer = importer
+    
+    @abstractmethod
+    def show_validation(self):
         pass
+
+    @abstractmethod
+    def show_alignment_validation(self, llm_approved):
+        pass
+
+    @abstractmethod
+    def prompt_selection_query(self, initial_query=None, callback_accept=None):
+        pass
+
+    @abstractmethod
+    def __enter__(self):
+        pass
+
+    @abstractmethod
+    def __exit__(self, exc_type, exc_value, exc_traceback):
+        pass
+
+import ipywidgets
+from IPython.display import display, clear_output    
+from jupyter_ui_poll import ui_events
+import time
+
+class ImporterJupyterUI(ImporterUI):
+
+    def __init__(self, importer : KnowledgeImporter):
+        super().__init__(importer)
+
+    def __enter__(self):
+        # TODO to be implemented
+        pass
+
+
+    def __exit__(self, exc_type, exc_value, exc_traceback):
+        # TODO to be implemented
+        pass
+
+    def show_alignment_validation(self, llm_approved):
+        g1 = Graph()
+        copy_namespaces(g1, self.importer.addition_graph)
+        g2 = Graph()
+        copy_namespaces(g2, self.importer.addition_graph)
+        hidden = URIRef('http://example.org/hidden')
+
+        # colors = dict()
+        for source_id, target_id in llm_approved:
+            g1.add((source_id, OWL.sameAs, target_id))
+            g2.add((target_id, URIRef('hidden'), hidden))
+            # colors[source_id] = '#99AA00'
+            # colors[target_id] = '#1100AA' 
+            
+        alignment_knowledge_importer = KnowledgeImporter(g2)
+        alignment_knowledge_importer.addition_graph = g1
+        alignment_knowledge_importer.validate()
+
+        self.importer.apply_alignment(list(filter(lambda triple: hidden not in triple, g2)))
+
+        # draw_graph(g, lambda _ : colors)
+
+    def show_validation(self):
+        self.loaded = False
+        self.output = ipywidgets.Output()
+        self.show_graph()
+        display(self.output)
+        with ui_events() as poll:
+            while self.loaded is False:
+                poll(10)          # React to UI events (up to 10 at a time)
+                time.sleep(0.1)
+
+    def show_graph(self, b=None):
+        button_accept = ipywidgets.Button(description='Accept')
+        def accept(b=None):
+            self.importer.load()
+            with self.output:
+                self.output.clear_output()
+                print('Data successfully loaded into the knowledge graph.')
+                self.loaded = True
+        button_accept.on_click(accept)
+        button_edit = ipywidgets.Button(description='Edit')
+        button_cancel = ipywidgets.Button(description='Cancel')
+        button_edit.on_click(self.show_edit)
+        with self.output:
+            self.output.clear_output()
+            self.visualize_addition_graph()
+            display(button_accept, button_edit, button_cancel)
+
+    
+    def visualize_addition_graph(self): 
+        draw_graph(self.importer.addition_graph, color_func=lambda _: dict(zip_longest(self.importer.addition_graph.all_nodes() - self.importer.pkg.all_nodes(), [], fillvalue='#99AA00')))
+
+    def show_edit(self, b=None):
+        init_value = self.importer.addition_graph.serialize(format='ttl')
+        text = ipywidgets.Textarea(
+            layout = ipywidgets.Layout(width='98%'),
+            value = init_value,
+            rows = len(init_value.split('\n'))
+        )
+        button_accept = ipywidgets.Button(description='Accept Edit')
+        def accept_edit(b=None):
+            if text.value != init_value:
+                self.importer.reload_from_text(text.value)
+            else:
+                print('No changes')
+            self.show_graph()
+        button_accept.on_click(accept_edit)
+        button_cancel = ipywidgets.Button(description='Cancel Edit')
+        button_cancel.on_click(self.show_graph)
+        with self.output:
+            self.output.clear_output()
+            display(ipywidgets.Label('Data to load'), text, button_accept, button_cancel)
+
+    def prompt_selection_query(self, graph, initial_query=None, callback_accept=None):
+        self.output = ipywidgets.Output()
+
+        label = ipywidgets.Label()
+        def update_label(result_size):
+            label.value = f'You are about to load {result_size} tuples. Adapt the query if appropriate.'
+
+        if initial_query is None: # TODO consider adding namespaces per default
+            initial_query = '''
+SELECT ?subject ?predicate ?object
+WHERE {?subject ?predicate ?object} 
+'''
+        text = ipywidgets.Textarea(
+            layout = ipywidgets.Layout(width='98%'),
+            value = initial_query,
+            rows = len(initial_query.split('\n'))
+        )
+
+        button_accept = ipywidgets.Button(description='Load Data')
+        def accept(b=None):
+            with self.output:
+                callback_accept(graph.query(text.value)) # TODO reduc unnecessary duplicate query running
+                self.output.clear_output()
+                print('Data successfully loaded into the knowledge graph.')
+        button_accept.on_click(accept)
+
+        button_edit = ipywidgets.Button(description='Update Query')
+        def edit(b=None):
+            button_edit.disabled = True
+            update_label(len(graph.query(text.value)))
+            button_edit.disabled = False
+
+        button_edit.on_click(edit)
+
+        button_cancel = ipywidgets.Button(description='Cancel')
+        with self.output:
+            self.output.clear_output()
+            edit()
+            display(label, text, button_accept, button_edit, button_cancel)
+
+        display(self.output)
 
