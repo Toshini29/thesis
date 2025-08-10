@@ -1,5 +1,6 @@
 from abc import ABC, abstractmethod
 from enum import Enum, auto
+import numbers
 
 from rdflib import Graph, Literal, RDF, RDFS, OWL, XSD, URIRef, Namespace
 from urllib.parse import quote, unquote
@@ -9,6 +10,7 @@ import src.ProcessKnowledgeGraph as ProcessKnowledgeGraph
 from pandas import notna
 import pandas as pd
 from pandas.api.types import is_string_dtype, is_numeric_dtype, is_datetime64_any_dtype
+import datetime
 
 
 from langchain_openai import ChatOpenAI
@@ -47,21 +49,27 @@ class Keys(enum.Enum):
         self.type_name = type_name
         self.relationship_name = relationship_name
     
-    CASE = BPO.Case, BPO.partOf
-    TASK = BPO.Task, None
-    ACTIVITY = BPO.Activity, BPO.instanceOf
-    RESOURCE = BPO.Resource, BPO.performedBy
-    ROLE = BPO.Role, BPO.hasRole
+    # CASE = BPO.Case, BPO.partOf
+    # TASK = BPO.Task, None
+    # ACTIVITY = BPO.Activity, BPO.instanceOf
+    # RESOURCE = BPO.Resource, BPO.performedBy
+    # ROLE = BPO.Role, BPO.hasRole
 
     ID = None, 'id'
-    DIRECTLY_FOLLOWED_BY = None, BPO.directlyFollowedBy
-    CAN_BE_EXECUTED_BY = None, BPO.canBeExecutedBy
+    # DIRECTLY_FOLLOWED_BY = None, BPO.directlyFollowedBy
+    # CAN_BE_EXECUTED_BY = None, BPO.canBeExecutedBy
 
 default_attribute_aliases = {
-    'concept:name' : Keys.ACTIVITY,
-    'case:concept:name' : Keys.CASE,
-    'org:resource' : Keys.RESOURCE,
+    'concept:name' : BPO.Activity,
+    'case:concept:name' : BPO.Case,
+    'org:resource' : BPO.Resource,
 #    'OfferID' : ('offer', 'offer') #TODO
+}
+
+default_attribute_relations = {
+    BPO.Case : BPO.partOf,
+    BPO.Activity : BPO.instanceOf,
+    BPO.Resource : BPO.performedBy
 }
 
 
@@ -212,22 +220,21 @@ class SimpleEventLogImporter(KnowledgeImporter):
         self.attribute_aliases = attribute_aliases
         self.reverse_attribute_aliases = dict((v, k) for k, v in attribute_aliases.items())
 
-        # self.case_attributes = set(case_attributes)
-        self.ignore_columns = set(ignore_columns).union(set([Keys.CASE, Keys.ID])) # These two are handled differently
-        self.entity_columns = set(entity_columns).union(set([Keys.CASE, Keys.ACTIVITY]))
+        self.ignore_columns = set(ignore_columns).union(set([BPO.Case, Keys.ID])) # These two are handled differently
+        self.entity_columns = set(entity_columns).union(set([BPO.Case, BPO.Activity]))
         self.value_columns = set(value_columns)
 
 
-    def entity_instance_node(self, col : str, entity):
-        return self.namespace[f'{quote(col)}_{quote(entity)}']
+    def entity_instance_node(self, col : str | URIRef, entity):
+        return self.namespace[f'{quote(uri_to_id(col))}_{quote(entity)}']
     
     def activity_node(self, activity): #TODO this ignores merged nodes, assuming all relevant activities came from this log/importer
-        return self.entity_instance_node(self.reverse_attribute_aliases.get(Keys.ACTIVITY), activity)
+        return self.entity_instance_node(BPO.Activity, activity)
 
     # Default behavior for importing event logs
     def import_event_log_entities(self, log : pd.DataFrame):
 
-        activity_col = self.reverse_attribute_aliases.get(Keys.ACTIVITY) # Must exist
+        activity_col = self.reverse_attribute_aliases.get(BPO.Activity) # Must exist
 
         for col in log:
             print(f'{col}, {log.dtypes[col]} : {log[col].unique()[0:10]}') # TODO: make nice UI
@@ -241,7 +248,7 @@ class SimpleEventLogImporter(KnowledgeImporter):
                 if is_entity_column:
                     print('=> Entity column')
                     values = log[col].dropna().unique()
-                    clazz, relation = self.determine_entity_col_class(col, values)
+                    clazz = self.determine_entity_col_class(col, values)
                     if (clazz, RDF.type, OWL.Class) not in self.pkg:
                         self.add((clazz, RDF.type, OWL.Class))  # Add OWL Class triple
                         self.log(f'Added type owl class for {col}: {clazz}')
@@ -281,12 +288,14 @@ class SimpleEventLogImporter(KnowledgeImporter):
 
         return is_entity_column, is_value_column
     
-    def determine_entity_col_class(self, col : str | Keys, coldata) -> tuple[URIRef, URIRef]:
-        if col in self.attribute_aliases:
-            return self.attribute_aliases[col].type_name, self.attribute_aliases[col].relationship_name
+    def determine_entity_col_class(self, col : str | URIRef, coldata) -> URIRef:
+        if isinstance(col, URIRef):
+            return col
+        elif col in self.attribute_aliases:
+            return self.attribute_aliases[col]
         else:
             # TODO infer proper entity type to be able to reuse existing types => That's the neat part: Do it in a transform step
-            return self.namespace['type_'+quote(col)], self.namespace['relation_'+quote(col)]
+            return self.namespace['type_'+quote(col)]# , self.namespace['relation_'+quote(col)]
     
 
     def infer_value_col_type(self, col):
@@ -301,86 +310,132 @@ class SimpleEventLogImporter(KnowledgeImporter):
 
 
     
-class OnlineEventImporter(KnowledgeImporter):
+class OnlineEventImporter(SimpleEventLogImporter):
 
-    def __init__(self, pkg : ProcessKnowledgeGraph, namespace=Namespace('http://example.org/'), attribute_aliases=default_attribute_aliases, case_attributes=set(), ignore_attributes=set(), entity_attributes=set()):
-        super().__init__(pkg)
+    def __init__(self, pkg : ProcessKnowledgeGraph, namespace_name='log', namespace=Namespace('http://example.org/'), attribute_aliases=default_attribute_aliases, attribute_relations=dict(), entity_columns=set(), value_columns=set(), ignore_columns=set(), case_attributes=set()):
+        super().__init__(pkg, namespace_name, namespace, attribute_aliases, entity_columns, value_columns, ignore_columns)
+        self.attribute_relations = dict(default_attribute_relations)
+        self.attribute_relations.update(attribute_relations)
+        self.case_attributes = set(case_attributes)
 
     
     def lazy_load_resources(self, resources, roles, activities, can_role_execute, can_resource_execute):
             # XXX check if lazy init works here
         
         for activity in activities: # TODO refactor "Add if not known pattern"
-            activity_node = self.entity_instance_node(Keys.ACTIVITY, activity)
+            activity_node = self.entity_instance_node(BPO.Activity, activity)
             if not self.pkg.is_entity_known(activity_node):
-                self.add(self.entity_triple(Keys.ACTIVITY, activity))
+                self.add(self.entity_triple(BPO.Activity, activity))
                 
         for resource in resources:
-            resource_node = self.entity_instance_node(Keys.RESOURCE, resource)
+            resource_node = self.entity_instance_node(BPO.Resource, resource)
             if not self.pkg.is_entity_known(resource_node):
-                self.add(self.entity_triple(Keys.RESOURCE, resource))
+                self.add(self.entity_triple(BPO.Resource, resource))
 
             # Reset direct executability
-            self.remove((None, self.attribute_relation(Keys.CAN_BE_EXECUTED_BY), resource_node))
+            self.remove((None, BPO.canBeExecutedBy, resource_node))
             for activity in activities:
                 if can_resource_execute and (can_resource_execute(resource, activity)):
-                    self.add((self.entity_instance_node(Keys.ACTIVITY, activity), self.attribute_relation(Keys.CAN_BE_EXECUTED_BY), self.entity_instance_node(Keys.RESOURCE, resource)))
+                    self.add((self.entity_instance_node(BPO.Activity, activity), BPO.canBeExecutedBy, self.entity_instance_node(BPO.Resource, resource)))
         
         for role, associated_resources in roles.items():
-            role_node = self.entity_instance_node(Keys.ROLE, role)
+            role_node = self.entity_instance_node(BPO.Role, role)
             if not self.pkg.is_entity_known(role_node):
-                self.add(self.entity_triple(Keys.ROLE, role))
+                self.add(self.entity_triple(BPO.Role, role))
                 
             for activity in activities:
                 if can_role_execute and (can_role_execute(role, activity)):
-                    self.add((self.entity_instance_node(Keys.ACTIVITY, activity), self.attribute_relation(Keys.CAN_BE_EXECUTED_BY), role_node))
+                    self.add((self.entity_instance_node(BPO.Activity, activity), BPO.canBeExecutedBy, role_node))
             for resource in associated_resources:
-                    self.add((self.entity_instance_node(Keys.RESOURCE, resource), self.attribute_relation(Keys.ROLE), role_node))
+                    self.add((self.entity_instance_node(BPO.Resource, resource), BPO.hasRole, role_node))
 
 
     def translate_event(self, event):
+        # Context
+        current_case = self.get_entity_attr(event, BPO.Case)
+        case_node = self.entity_instance_node(BPO.Case, current_case)
+
         # Add basic node
-        node = self.entity_instance_node(Keys.TASK, self.get_entity_attr(event, Keys.ID))
-        self.add((node, RDF.type, self.entity_type_node(Keys.TASK)))
+        node = self.entity_instance_node(BPO.Task, self.task_id_for_event(event, current_case, case_node)) # TODO: Why infer type task? Could be different event!
+        self.add((node, RDF.type, BPO.Task))
 
         # Connect to case node an case tail
-        currentCase = self.get_entity_attr(event, Keys.CASE)
-        case_node = self.entity_instance_node(Keys.CASE, currentCase)
         current_tail = self.case_tail(case_node)
-        self.set_node_attribute(node, Keys.CASE, currentCase)
+        self.set_node_attribute(node, BPO.Case, current_case)
         if current_tail:
             # Connect to to preceding node
-            self.add((current_tail, self.attribute_relation(Keys.DIRECTLY_FOLLOWED_BY), node))
+            self.add((current_tail, BPO.directlyFollowedBy, node))
 
         # Add event attributes
         for attr in self.get_entity_attr_list(event):
             value = self.get_entity_attr(event, attr)
             target = node if (attr not in self.case_attributes) else case_node
-            if notna(value) and (attr not in self.ignore_attributes): 
+            if notna(value) and (attr not in self.ignore_columns): 
                 self.set_node_attribute(target, attr, value)
 
+    def case_tail(self, case_node):
+        def case_tail_in(graph, case_node):
+            case_tasks = set(graph.objects(subject=case_node, predicate=~BPO.partOf))
+            followed_case_tasks = set(graph.objects(subject=case_node, predicate=~BPO.partOf / ~BPO.directlyFollowedBy))
+            return next(iter(case_tasks - followed_case_tasks), None)
+        loading_tail = case_tail_in(self.addition_graph, case_node)
+        if not loading_tail:
+            return case_tail_in(self.pkg, case_node)
+        else:
+            return loading_tail
+
+    
         # Can be overriden, currently assumes entities as dicts
-    def get_entity_attr(self, entity, attr : str | Keys):
+    def get_entity_attr(self, entity, attr : str | URIRef):
         return entity[self.reverse_attribute_aliases.get(attr, attr)]
 
     # Can be overriden, currently assumes entities as dicts
     def get_entity_attr_list(self, entity):
         return list(map(lambda attr : self.attribute_aliases.get(attr, attr), entity.keys()))
 
-    def set_node_attribute(self, entity_node, attr, value):
-        if attr in self.entity_attributes:
+    def set_node_attribute(self, entity_node, attr : str | URIRef, value):
+        is_entity_column, is_value_column = self.determine_col_type(attr, value)
+        if is_entity_column:
+            clazz = self.determine_entity_col_class(attr, [value])
             attr_node = self.entity_instance_node(attr, value)
-            if not self.pkg.is_entity_known(attr_node):
-                self.add(self.entity_triple(attr, value))
+            #if not self.pkg.is_entity_known(attr_node):
+            self.add((attr_node, RDF.type, clazz))
         else:
             attr_node = Literal(value)
 
-        attr_triple = (entity_node, self.attribute_relation(attr), attr_node)
-        if attr_triple not in self:
-            self.add(attr_triple) 
+        attr_triple = (entity_node, self.attribute_relation(attr), attr_node) 
+        self.add(attr_triple) 
 
         return attr_triple
     
+    # TODO a lot of code duplication
+    def determine_col_type(self, col_key : str | Keys, col_data):
+        is_entity_column = False
+        is_value_column = False
+
+        if col_key in self.entity_columns:
+            is_entity_column = True
+        elif col_key in self.value_columns:
+            is_value_column = True
+        elif isinstance(col_data, numbers.Number) or isinstance(col_data, datetime.date):
+            is_value_column = True
+        elif col_data in set([True, False]):
+            is_value_column = True
+        else:
+            is_entity_column = True
+
+        return is_entity_column, is_value_column
+    
+    def attribute_relation(self, attr):
+        return self.attribute_relations.get(attr, self.namespace[quote(attr)])
+    
+    def task_id_for_event(self, event, case_id, case_node):
+        try:
+            return self.get_entity_attr(event, Keys.ID)
+        except:  # TODO: A bit hacky
+            num_current_tasks = len(set(self.addition_graph.objects(subject=case_node, predicate=~BPO.partOf)) | set(self.pkg.objects(subject=case_node, predicate=~BPO.partOf)))
+            return f'{case_id}_{num_current_tasks + 1}' # TODO: This doesn't allow to have mulitple events for the same task!
+
 
 
 class TextualImporter(KnowledgeImporter):

@@ -13,10 +13,6 @@ class ProcessKnowledgeGraph(Graph):
         with importlib.resources.open_text('src', 'base_ontology.ttl') as file:
             self.parse(file=file)
 
-   
-
-    def case_tail(self, case):
-        return next(iter(set(self.objects(subject=case, predicate=~BPO.partOf)) - set(self.objects(subject=case, predicate=~BPO.partOf / ~BPO.directlyFollowedBy))), None)
 
     def unassigned_tasks(self):
         return set(self.objects(predicate=~BPO.partOf)) - set(self.subjects(predicate=BPO.performedBy))
