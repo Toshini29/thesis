@@ -4,9 +4,9 @@ import numbers
 
 from rdflib import Graph, Literal, RDF, RDFS, OWL, XSD, URIRef, Namespace
 from urllib.parse import quote, unquote
-from src.utils import *
-from src.utils import BASE_PROCESS_ONTOLOGY as BPO
-import src.ProcessKnowledgeGraph as ProcessKnowledgeGraph
+from karibdis.utils import *
+from karibdis.utils import BASE_PROCESS_ONTOLOGY as BPO
+import karibdis.ProcessKnowledgeGraph as ProcessKnowledgeGraph
 from pandas import notna
 import pandas as pd
 from pandas.api.types import is_string_dtype, is_numeric_dtype, is_datetime64_any_dtype
@@ -639,7 +639,7 @@ WHERE {?subject ?predicate ?object}
             with self.output:
                 callback_accept(graph.query(text.value)) # TODO reduc unnecessary duplicate query running
                 self.output.clear_output()
-                print('Data successfully loaded into the knowledge graph.')
+                print('Ontology successfully queries.')
         button_accept.on_click(accept)
 
         button_edit = ipywidgets.Button(description='Update Query')

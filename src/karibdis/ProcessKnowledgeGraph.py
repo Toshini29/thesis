@@ -1,7 +1,7 @@
 from rdflib import Graph, Literal, RDF, URIRef, Namespace
 from urllib.parse import quote, unquote
-from src.utils import *
-from src.utils import BASE_PROCESS_ONTOLOGY as BPO
+from karibdis.utils import *
+from karibdis.utils import BASE_PROCESS_ONTOLOGY as BPO
 from pandas import notna
 import importlib.resources
 
@@ -10,7 +10,7 @@ class ProcessKnowledgeGraph(Graph):
     def __init__(self):
         super().__init__()
 
-        with importlib.resources.open_text('src', 'base_ontology.ttl') as file:
+        with importlib.resources.open_text('karibdis', 'base_ontology.ttl') as file:
             self.parse(file=file)
 
 
