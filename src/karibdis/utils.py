@@ -142,13 +142,13 @@ def textualize_graph(graph, annotation_properties=None, filter_func=None):
     #for annotation_relation in _iter_annotations:
     #    annotation_path |= annotation_relation
         
-    def textualize_node_old(node):
-        annotation_facts = filter(lambda triple: triple[1] in annotation_properties, graph.triples((node, None, None))) # Should be graph.triples((node, annotation_path, None)), but returned triples have weird path
-        g = Graph()
-        copy_namespaces(g, graph)
-        g += annotation_facts
-        context = '\n\n'.join(g.serialize(format='ttl').split('.\n\n')[1:]).strip() # Remove namespaces
-        return node, context
+    # def textualize_node_old(node):
+    #     annotation_facts = filter(lambda triple: triple[1] in annotation_properties, graph.triples((node, None, None))) # Should be graph.triples((node, annotation_path, None)), but returned triples have weird path
+    #     g = Graph()
+    #     copy_namespaces(g, graph)
+    #     g += annotation_facts
+    #     context = '\n\n'.join(g.serialize(format='ttl').split('.\n\n')[1:]).strip() # Remove namespaces
+    #     return node, context
 
     def strip_uri(uri):
         try:
@@ -196,7 +196,7 @@ def graph_alignment(addition_texts, target_texts):
     cross_encoder = CrossEncoder("cross-encoder/ms-marco-MiniLM-L-6-v2")
     def top_k_nodes(i, top_k=10, top_k_outer=20):
         source_id = source_ids[i]
-        top_scores, top_indices = cosine_scores[i].topk(top_k_outer, sorted=True)
+        top_scores, top_indices = cosine_scores[i].topk(min(len(cosine_scores[i]), top_k_outer), sorted=True)
         top_values = [target_texts_list[index] for index in top_indices]
         ranks = cross_encoder.rank(source_texts_list[i], top_values, top_k=top_k, return_documents=True)
 
@@ -223,6 +223,8 @@ from rdflib import RDF
 from rdflib.extras.external_graph_libs import rdflib_to_networkx_multidigraph
 import networkx as nx
 import matplotlib.pyplot as plt, matplotlib.colors
+import ipywidgets
+from IPython.display import display, clear_output
 from yfiles_jupyter_graphs import GraphWidget
 
 
@@ -255,4 +257,11 @@ def draw_graph(graph, color_func=color_by_type):
     widget = GraphWidget(graph = dg)
     widget.edge_label_mapping = 'label'
     widget.node_color_mapping = 'color'
-    widget.show()
+    #widget.show()
+    
+    # Hack. Display needs to be called once for the graph to render properly - so we put it into a never shown output widget 
+    #with ipywidgets.Output():
+    #    display(graph)
+    #    clear_output()
+
+    return widget
