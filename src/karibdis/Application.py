@@ -113,33 +113,35 @@ def ActiveImportUI(source, set_source, pkg):
             w.Label(value="PROCESSING") # TODO nice loading wheel that blocks inputs
     with w.Box(layout = ipywidgets.Layout(width='100%', height='98%')): 
         if stage == EXTRACT:
-                
-            if source == TEXT:
-                if importer == None:
+
+            def run_extraction(extraction_routine):
+                set_processing(True)
+                extraction_routine()
+                set_count(len(importer.addition_graph))
+                set_stage(ALIGN)
+                set_processing(False)
+
+            if importer is None:
+                if source == TEXT:
                     _importer = TextualImporter(pkg)
-                    set_importer(_importer)
-                    print('Constructed Importer')
+                elif source == EVENT_LOG:
+                    _importer = SimpleEventLogImporter(pkg)
+                elif source == EXISTING_ONTOLOGY:
+                    _importer = ExistingOntologyImporter(pkg)
+                else:
+                    raise ValueError(f'Unknown source {source}')
+                set_importer(_importer)
+                print('Constructed Importer')
+
+            elif source == TEXT:
                 text, set_text = reacton.use_state('')#'The process value CRP represents the mg of C-reactive protein per liter of blood in a blood test') #TODO
                 w.Textarea(value=text, on_value=set_text, rows=10, layout = ipywidgets.Layout(width='98%'))
-                def load_statement():
-                    set_processing(True)
-                    importer.import_content_from_statement(text)
-                    set_text('')
-                    set_count(len(importer.addition_graph))
-                    set_processing(False)
-                    set_stage(ALIGN)
-                w.Button(description="Confirm", on_click=load_statement)
+                w.Button(description="Confirm", on_click=lambda: run_extraction(lambda: importer.import_content_from_statement(text)))
                 # w.Button(description="Continue to alignment", on_click=) TODO allow import of multiple statements
             
             elif source == EVENT_LOG:
                 log, set_log = reacton.use_state(None)
-
-                if importer == None:
-                    _importer = SimpleEventLogImporter(pkg)
-                    set_importer(_importer)
-                    print('Constructed Importer')
-
-                elif log is None:
+                if log is None:
                     def upload(files): # TODO code duplicate to ontology importer
                         file = files[0]
                         _log = None
@@ -157,7 +159,6 @@ def ActiveImportUI(source, set_source, pkg):
                         on_value=upload
                     )
                 else:
-                    
                     dirty, set_dirty = reacton.use_state(False)
                     
                     def change_col_type(column, value):
@@ -180,13 +181,6 @@ def ActiveImportUI(source, set_source, pkg):
                     def change_col_alias(col_key, value):
                         importer.change_col_alias(col_key, value)
                         set_dirty(True)
-                    def load_log_entities():
-                        set_processing(True)
-                        importer.import_event_log_entities(log) # TODO duplicate code except this line
-                        set_count(len(importer.addition_graph))
-                        set_processing(False)
-                        set_stage(ALIGN)
-
                         
                     if not dirty:
                         with w.VBox():
@@ -214,40 +208,29 @@ def ActiveImportUI(source, set_source, pkg):
                                         value=alias,
                                         on_value=lambda x, key=key: change_col_alias(key, x)
                                     )
-                            w.Button(description="Load Entities", on_click=load_log_entities)
+                            w.Button(description="Load Entities", on_click=lambda: run_extraction(lambda: importer.import_event_log_entities(log)))
                     else:
                         set_dirty(False) # Force Reload
                             
             elif source == EXISTING_ONTOLOGY:
                 ontology, set_ontology = reacton.use_state(None)
-                def load_from_subgraph(subgraph):
-                    set_processing(True)
-                    importer.accept_filtered_result(subgraph, ontology)
-                    set_count(len(importer.addition_graph))
-                    set_processing(False)
-                    set_stage(ALIGN)
+
+                if ontology is not None:
+                    ImporterJupyterUI2.query_view(ontology, set_processing, callback_accept=lambda: run_extraction(lambda: importer.import_existing_ontology(ontology, load_from_subgraph)))
+                else: 
+                    def upload(files):
+                        file = files[0]
+                        data = str(file.content,'utf-8')
+                        graph = Graph().parse(data=data, format='ttl')
+                        set_ontology(graph)
                     
-                if importer is None:
-                    _importer = ExistingOntologyImporter(pkg)
-                    set_importer(_importer)
-                    print('Constructed Importer')
-                else:
-                    if ontology is not None:
-                        ImporterJupyterUI2.query_view(ontology, set_processing, callback_accept=load_from_subgraph)
-                    else: 
-                        def upload(files):
-                            file = files[0]
-                            data = str(file.content,'utf-8')
-                            graph = Graph().parse(data=data, format='ttl')
-                            set_ontology(graph)
-                        
-                        w.FileUpload(
-                            description = 'Upload Ontology File',
-                            accept='.ttl',
-                            on_accept=lambda **args: print(args),
-                            multiple=False,
-                            on_value=upload
-                        )
+                    w.FileUpload(
+                        description = 'Upload Ontology File',
+                        accept='.ttl',
+                        on_accept=lambda **args: print(args),
+                        multiple=False,
+                        on_value=upload
+                    )
     
         elif stage == ALIGN:
             AlignmentUI(importer, set_stage, set_processing)
