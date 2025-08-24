@@ -1,33 +1,5 @@
-# KRAFT – A Knowledge-Graph-Based Resource Allocation Framework
-This repository contains the code for the paper of same name. Please refer to the paper for conceptual details.
+<h1>KARIBDIS
+<p class="tagline" style="font-size: .6em;">Knowledge-Augmented Reasoning for Intelligent Business Decision and Intelligence Support</p>
+</h1>
 
-The code in this repository implements an approach to resource allocation in business processes based on knowledge graph. The allocator is tied into the [Business Process Optimization Competition 2023 (BPOC)](https://sites.google.com/view/bpo2023/competition) simulation frame for resource allocation. The main entry point is the [Demonstration](./Demonstration.ipynb) Jupyter notebook.
-
-## Prerequisites & Setup
-This project uses Python 3.10. The version is necessary for compatibility with the simulator frame. 
-
-First, clone this repository and navigate into the project folder.
-This repository additionally utilizes the Business Process Optimization Competition 2023 simulation frame. Please download the respective zip file from the official [BPOC 2023 website](https://sites.google.com/view/bpo2023/competition) and unpack it as subfolder of the cloned project folder.
-
-We strongly recommend the usage of a virtual environment, e.g., with
-``` bash
-python3.10 -m venv .venv
-```
-
-Then, please install the necessary Python libraries:
-``` bash
-pip install -r requirements.txt -r requirements_bpoc.txt
-```
-
-You can from now on start the Jupyter notebook by running the following:
-``` bash
-jupyter lab
-```
-
-
-## Known Issues
-- The simulator might get stuck by only appropriating resources that cannot run the currently open tasks. In that case, just rerun the simulation
-
-
-## External Files
-This repository contains the `BPI Challenge 2017 - clean.csv` event log file retrieved from [the bpoc project](https://github.com/bpogroup/bpo-project/blob/a4aa6331166648b1920ef741e7a1eb65b8438904/bpo/resources/BPI%20Challenge%202017%20-%20clean.zip)
+TBD
