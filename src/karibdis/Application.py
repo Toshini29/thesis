@@ -1,4 +1,5 @@
 from abc import ABC, abstractmethod
+import os
 import ipywidgets
 from IPython.display import display, clear_output, Javascript
 
@@ -227,7 +228,8 @@ def EventLogExtractionUI(importer, set_subtitle, be_busy_with, run_extraction):
             file = files[0]
             _log = None
             import tempfile 
-            with tempfile.NamedTemporaryFile() as f:
+            filename = os.path.join(tempfile.gettempdir(), os.urandom(24).hex())
+            with open(filename, 'wb') as f:
                 f.write(file.content)
                 _log = pm4py.read_xes(f.name) # also support csv at some point
             set_log(_log)
