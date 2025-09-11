@@ -23,14 +23,17 @@
 
 :plannedAt rdf:type owl:DatatypeProperty , owl:FunctionalProperty ; # This lifecycle phase can be argued to be domain-specific, but is included here for completenes purposeses
     rdfs:domain :Task ;
+    rdfs:range xsd:dateTime ;
     rdfs:comment "The timestamp at which a task was assigned a fixed time or resources to be executed".
     
 :startedAt rdf:type owl:DatatypeProperty , owl:FunctionalProperty ;
     rdfs:domain :Task ;
+    rdfs:range xsd:dateTime ;
     rdfs:comment "The timestamp at which a task's execution was started".
     
 :completedAt rdf:type owl:DatatypeProperty , owl:FunctionalProperty ;
     rdfs:domain :Task ;
+    rdfs:range xsd:dateTime ;
     rdfs:comment "The timestamp at which a task's execution was completed".
 
 
