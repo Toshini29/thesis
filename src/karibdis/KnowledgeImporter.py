@@ -286,6 +286,9 @@ class SimpleEventLogImporter(KnowledgeImporter):
 
                 # TODO: Do something with case attributes vs. task attributes
 
+
+                type_hint = None
+
                 if is_entity_column:
                     print('=> Entity column')
                     values = log[col].dropna().unique()
@@ -298,18 +301,19 @@ class SimpleEventLogImporter(KnowledgeImporter):
                         entity_node = self.entity_instance_node(col_key, entity)
                         self.add((entity_node, RDF.type, clazz))
                         self.add((entity_node, RDFS.label, Literal(entity)))
+                    type_hint = clazz
 
                 if is_value_column:
-                    value_node = self.entity_instance_node(BPO.ProcessValue, col)
-                    self.add((value_node, RDF.type, BPO.ProcessValue))
-
-                    for activity in log[log[col].notnull()][activity_col].unique(): 
-                        activity_node = self.activity_node(activity) 
-                        self.add((activity_node, BPO.writesValue , value_node))
-
                     type_hint = self.infer_value_col_type(log[col])
-                    self.add((value_node, BPO.dataType , type_hint))
                     print(f'=> Value column of type {type_hint}')
+                    
+                value_node = self.entity_instance_node(BPO.ProcessValue, col) # TODO clarify naming: is actually relation
+                self.add((value_node, RDF.type, BPO.ProcessValue))
+                self.add((value_node, BPO.dataType , type_hint))
+                for activity in log[log[col].notnull()][activity_col].unique(): 
+                    activity_node = self.activity_node(activity) 
+                    self.add((activity_node, BPO.writesValue , value_node))
+    
 
     def import_declare(self, declare):
         declare_map = {
