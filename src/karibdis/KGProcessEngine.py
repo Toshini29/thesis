@@ -26,7 +26,8 @@ class KGProcessEngine:
             if len(removed) > 0 or len(added) > 0:
                 self.queue_event({'knowledge_updated': True, 'removed': removed, 'added': added})
             else:
-                self.infer_decisions()
+                pass
+                # TODO self.infer_decisions()
 
         # TODO temp
         added_tasks = list(filter(lambda triple : triple[1] == BPO.instanceOf, event.get('added', set())))
@@ -60,24 +61,33 @@ class KGProcessEngine:
 
         return removed, added
     
-    def infer_decisions(self):
+    def open_decisions(self):
         open_next_activities_query = """
             PREFIX : <http://infs.cit.tum.de/karibdis/baseontology/>
 
             SELECT ?task ?case
             WHERE {
                 ?case a :Case .
-                ?task :partOf $this .
+                ?task :partOf ?case .
                 FILTER NOT EXISTS { ?task :instanceOf ?any }
                 FILTER NOT EXISTS {
-                    $this :isClosed true
+                    ?case :isClosed true
                 }
-            }
-            """
+            }"""
 
         open_next_activities = self.pkg.query(open_next_activities_query)
         for task, case in open_next_activities:
-            decision_result = self.request_decision(Decision(self, task, BPO.instanceOf, {'case' : case, 'target_type': BPO.Activity}))
+            yield Decision(self, task, BPO.instanceOf, {'case' : case, 'target_type': BPO.Activity})
+    
+    def handle_decision(self, decision_to_make, decision_result):
+        triple_to_add = (decision_to_make.subject, decision_to_make.predicate, decision_result)
+        self.pkg.add(triple_to_add)
+        self.queue_event({'knowledge_updated': True, 'added': {triple_to_add}, 'deleted': set()})
+    
+    def infer_decisions(self):
+        open_decisions = self.open_decisions()
+        for decision in open_decisions:
+            decision_result = self.request_decision(decision)
             if decision_result != None:
                 return decision_result# The current decision might have changed things, so rerun the whole deduction and inference
     
@@ -88,9 +98,7 @@ class KGProcessEngine:
             decision_result = self.human_decision(decision_to_make)
 
         if decision_result != None:
-            triple_to_add = (decision_to_make.subject, decision_to_make.predicate, decision_result)
-            self.pkg.add(triple_to_add)
-            self.queue_event({'knowledge_updated': True, 'added': {triple_to_add}, 'deleted': set()})
+            self.handle_decision(decision_to_make, decision_result)
 
         return decision_result
         
@@ -115,7 +123,8 @@ class KGProcessEngine:
         top_options = decision_to_make.get_top_k_results(k=5) # Get all options, even the ones that are not allowed
         for index, (score, option, reasoning) in enumerate(top_options):
             option_label = next(self.pkg.objects(predicate=RDFS.label, subject=option), option)
-            print(f'{index}: {option_label}, score: {score}, considering: \n {reasoning}')
+            sep = '\n -\t'
+            print(f'{index}: {option_label}, score: {score}, considering: {sep}{sep.join(reasoning)}')
         print('Type the index of the option to select. Type -1 to not perform any decision.')
         selection = input()
         selected_index = int(selection) if selection != '' else 0
@@ -176,7 +185,7 @@ class Decision:
     def calculate_score(self, test_result):
         conforms, results_graph, results_text = test_result
         
-        verdict = ''
+        verdict = []
         score = 0
 
         for result in results_graph.subjects(predicate=RDF.type, object=SH_ValidationResult):
@@ -194,7 +203,7 @@ class Decision:
             else:
                 score += float('-inf')
             message = next(results_graph.objects(predicate=SH_resultMessage, subject=result))
-            verdict += '\t' + de_urify(message) + '\n'
+            verdict.append(de_urify(message))
             # print('Ah, interesting: '+message)
         return score, verdict
     

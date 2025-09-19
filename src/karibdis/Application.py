@@ -8,6 +8,7 @@ import uuid
 import reacton
 import reacton.ipywidgets as w
 import reacton.ipyvuetify as v
+from ipywidgets.widgets.widget_string import LabelStyle
 
 import pm4py
 import json
@@ -35,8 +36,9 @@ class JupyterApplication(ipywidgets.Box):
         
     def base_view(self):
         tabs = [
-            ('Knowledge Modeling', reacton.render_fixed(KnowledgeModelingUI(self.system.pkg))[0]),
-            ('Process Execution', reacton.render_fixed(PrescriptionAndTaskUI())[0]),
+            ('Knowledge Modeling', reacton.render_fixed(KnowledgeModelingUI(self.system.pkg))[0]),            
+            ('Process Execution', reacton.render_fixed(PrescriptionAndTaskUI(self.system.engine))[0]),
+            ('Explore Graph', reacton.render_fixed(GraphExplorationUI(self.system.pkg))[0]),
         ]
         root = ipywidgets.Tab()
         root.layout = ipywidgets.Layout(width='100%', height='100%')
@@ -231,7 +233,7 @@ def EventLogExtractionUI(importer, set_subtitle, be_busy_with, run_extraction):
             filename = os.path.join(tempfile.gettempdir(), os.urandom(24).hex())
             with open(filename, 'wb') as f:
                 f.write(file.content)
-                _log = pm4py.read_xes(f.name) # also support csv at some point
+                _log = pm4py.read_xes(f.name) # TODO also support csv at some point
             set_log(_log)
         
         w.FileUpload(
@@ -374,17 +376,64 @@ def AlignmentUI(importer, set_stage, be_busy_with):
         w.Button(description="Automated Alignment", on_click=lambda: be_busy_with(lambda: set_alignment(importer.determine_alignment())))  
     return main
 
+@reacton.component
+def DecisionsBody(engine, decisions, reload):
+    current_decision, set_current_decision = reacton.use_state(decisions[0])
+    reacton.use_effect(lambda: set_current_decision(decisions[0]), [decisions])
+    options, set_options = reacton.use_state([])
+    reacton.use_effect(lambda: set_options(current_decision.get_top_k_results(5)), [current_decision])
+    with w.HBox():
+        with w.VBox():
+            for decision in decisions:
+                w.Button(
+                    description=engine.pkg.namespace_manager.curie(decision.subject), 
+                    on_click=lambda decision=decision: set_current_decision(decision),
+                    style=w.ButtonStyle(button_color='#DDEEFF' if decision.subject == current_decision.subject else None)
+                )
+        with w.VBox(layout=w.Layout(flex='0 1 100%')):
+            for score, option, reasoning in options:
+                with w.VBox(layout=w.Layout(border='solid lightgray', margin='0.2%', padding='0.1%', flex='0 1 100%')):  
+                    v.Label(children=f'{next(engine.pkg.objects(predicate=RDFS.label, subject=option), engine.pkg.namespace_manager.curie(option))} ({score})', style=LabelStyle(font_weight='bold', width='100%'))
+                    for reason in reasoning:
+                        w.Label(value=f'- {reason}')
+                    w.Button(description='Confirm', on_click=lambda: [engine.handle_decision(current_decision, option), reload()])
+
 
 @reacton.component
-def PrescriptionAndTaskUI():
+def PrescriptionAndTaskUI(engine):
     with w.VBox() as main:
-        w.Label(value="Prescription and Task UI")
-        graph = draw_graph(ProcessKnowledgeGraph())
-    
-        # Extra Hack. See commend in utils.py 
-        with ipywidgets.Output():
-            display(graph)
-            clear_output()
+        decisions, set_decisions = reacton.use_state(list(engine.open_decisions()))
+        def reload():
+            set_decisions(list(engine.open_decisions()))
+        
+        with v.Card(): 
+            v.CardTitle(children="Decision UI")
+            with v.CardText():
+                if len(decisions) > 0:
+                    DecisionsBody(engine, decisions, reload)
+                else:
+                    w.Label(value='No decision to make')
+                    
+        w.Button(description='Reload', on_click=reload)
+    return main
+
+
+@reacton.component
+def GraphExplorationUI(graph):
+    reload, set_reload = reacton.use_state(False)
+    with w.VBox() as main:
+        if not reload:
+            w.Label(value="Prescription and Task UI")
+            graph = draw_graph(ProcessKnowledgeGraph())
+        
+            # Extra Hack. See commend in utils.py 
+            with ipywidgets.Output():
+                display(graph)
+                clear_output()
+        else:
+            w.Label(value="Reloading...")
+            set_reload(False)
+        w.Button(description="Reload Graph", on_click=lambda: set_reload(True))
     return main
 
 
