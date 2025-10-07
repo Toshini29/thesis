@@ -163,7 +163,7 @@ def ActiveImportUI(source, set_source, pkg):
                     ontology, set_ontology = reacton.use_state(None)
 
                     if ontology is not None:
-                        ImporterJupyterUI2.query_view(ontology, set_processing, callback_accept=lambda subgraph: run_extraction(lambda: importer.accept_filtered_result(subgraph, ontology)))
+                        QueryView(ontology, set_processing, callback_accept=lambda subgraph: run_extraction(lambda: importer.accept_filtered_result(subgraph, ontology)))
                     else: 
                         def upload(files):
                             file = files[0]
@@ -364,6 +364,44 @@ def DiscoveryUI(importer, log, run_extraction):
         
         w.Button(description="Load Constraints", on_click=lambda: run_extraction(lambda: importer.import_declare(declare)))  
 
+
+
+@reacton.component
+def QueryView(graph, set_processing, initial_query=None, callback_accept=None):
+
+
+    with w.VBox(layout = ipywidgets.Layout(width='100%', height='98%')) as main:  
+
+
+        place_box, current_result, current_result_size, dirty, run_query = QueryBox(graph, initial_query)
+        
+        # label = w.Label(value = f'{current_result} {dirty}')
+        place_box()
+
+        with w.HBox():
+            if current_result is not None and not dirty:
+                def accept(b=None):
+                    callback_accept(current_result) # TODO reduce unnecessary duplicate query running
+                    print('Ontology successfully queried.')
+
+                label = w.Label(value = f'You are about to load {current_result_size} tuples. Adapt the query if appropriate.')
+                button_accept = w.Button(description='Load Data', on_click=accept)
+
+            else:
+                def edit(b=None):
+                    set_processing(True)
+                    button_edit.disabled = True
+                    run_query()
+                    button_edit.disabled = False
+                    set_processing(False)
+                button_edit = w.Button(description='Test Query', on_click=edit)
+
+        # TODO one initial edit
+
+    return main
+
+
+
 @reacton.component
 def AlignmentUI(importer, set_stage, be_busy_with):
     alignment, set_alignment = reacton.use_state([])
@@ -419,19 +457,33 @@ def PrescriptionAndTaskUI(engine):
 
 
 @reacton.component
-def GraphExplorationUI(graph):
-    reload, set_reload = reacton.use_state(False)
+def GraphViz(graph):
     with w.VBox() as main:
+        graph_viz = draw_graph(graph)
+        display(graph_viz)
+    return main
+
+@reacton.component
+def GraphExplorationUI(graph):
+    reload, set_reload = reacton.use_state(True)
+    place_box, current_result, current_result_size, dirty, run_query = QueryBox(graph)
+    current_graph, set_current_graph = reacton.use_state(graph)
+
+    def update_subgraph():
+        _current_graph = Graph()
+        copy_namespaces(_current_graph, graph)
+        _current_graph += current_result
+        set_current_graph(_current_graph)
+    reacton.use_effect(update_subgraph, [current_result])
+    
+    with w.VBox() as main:
+        GraphViz(current_graph)
+
         if not reload:
-            w.Label(value="Prescription and Task UI")
-            graph = draw_graph(ProcessKnowledgeGraph())
-        
-            # Extra Hack. See commend in utils.py 
-            with ipywidgets.Output():
-                display(graph)
-                clear_output()
+            place_box()
         else:
             w.Label(value="Reloading...")
+            run_query()
             set_reload(False)
         w.Button(description="Reload Graph", on_click=lambda: set_reload(True))
     return main
@@ -440,6 +492,39 @@ def GraphExplorationUI(graph):
 
 
 # =========================== UTILS ===========================
+
+
+def QueryBox(graph, initial_query=None):
+    # TODO consider adding namespaces per default
+    default_initial_query = ''' 
+SELECT ?subject ?predicate ?object
+WHERE {?subject ?predicate ?object} 
+'''  
+    current_result, set_current_result = reacton.use_state(None)
+    current_result_size, set_current_result_size = reacton.use_state(0)
+    dirty, set_dirty = reacton.use_state(True)
+    query, _set_query = reacton.use_state(initial_query if initial_query else default_initial_query) 
+    def set_query(value):
+        set_dirty(True)
+        _set_query(value)  
+
+    place_box = lambda : w.Textarea(
+        layout = w.Layout(width='98%'),
+        value = query,
+        on_value=set_query,
+        rows = len(query.split('\n')) + 2
+    )
+
+    def run_query():
+        query_result = graph.query(query)
+        print(query_result)
+        set_current_result_size(len(query_result))
+        set_dirty(False)
+        set_current_result(query_result)
+
+    return place_box, current_result, current_result_size, dirty, run_query
+
+
 
 # Attention: Veeeeery hacky
 def format_query(queries, callback, output=None):
