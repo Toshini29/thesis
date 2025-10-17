@@ -415,45 +415,38 @@ def AlignmentUI(importer, set_stage, be_busy_with):
     return main
 
 @reacton.component
-def DecisionsBody(engine, decisions, reload):
-    current_decision, set_current_decision = reacton.use_state(decisions[0])
-    reacton.use_effect(lambda: set_current_decision(decisions[0]), [decisions])
-    options, set_options = reacton.use_state([])
-    reacton.use_effect(lambda: set_options(current_decision.get_top_k_results(5)), [current_decision])
-    with w.HBox():
-        with w.VBox():
-            for decision in decisions:
-                w.Button(
-                    description=engine.pkg.namespace_manager.curie(decision.subject), 
-                    on_click=lambda decision=decision: set_current_decision(decision),
-                    style=w.ButtonStyle(button_color='#DDEEFF' if decision.subject == current_decision.subject else None)
-                )
-        with w.VBox(layout=w.Layout(flex='0 1 100%')):
-            for score, option, reasoning in options:
-                with w.VBox(layout=w.Layout(border='solid lightgray', margin='0.2%', padding='0.1%', flex='0 1 100%')):  
-                    v.Label(children=f'{next(engine.pkg.objects(predicate=RDFS.label, subject=option), engine.pkg.namespace_manager.curie(option))} ({score})', style=LabelStyle(font_weight='bold', width='100%'))
-                    for reason in reasoning:
-                        w.Label(value=f'- {reason}')
-                    w.Button(description='Confirm', on_click=lambda: [engine.handle_decision(current_decision, option), reload()])
+def PrescriptionAndTaskUI(engine):
+    decisions, set_decisions = reacton.use_state(list(engine.open_decisions()))
+    def reload():
+        set_decisions(list(engine.open_decisions()))
 
+    def decision_label(decision):
+        return engine.pkg.namespace_manager.curie(decision.subject)
+
+    def make_decision_view(decision):
+        return DecisionsBody(engine, decision, reload)
+    
+    return SelectionMenu(
+        "Decision UI", 
+        decisions, 
+        set_decisions, 
+        reload, 
+        decision_label ,  
+        make_decision_view, 
+        item_equality=lambda decision_a, decision_b : decision_a.subject == decision_b.subject
+    )
 
 @reacton.component
-def PrescriptionAndTaskUI(engine):
-    with w.VBox() as main:
-        decisions, set_decisions = reacton.use_state(list(engine.open_decisions()))
-        def reload():
-            set_decisions(list(engine.open_decisions()))
-        
-        with v.Card(): 
-            v.CardTitle(children="Decision UI")
-            with v.CardText():
-                if len(decisions) > 0:
-                    DecisionsBody(engine, decisions, reload)
-                else:
-                    w.Label(value='No decision to make')
-                    
-        w.Button(description='Reload', on_click=reload)
-    return main
+def DecisionsBody(engine, current_decision, reload):
+    with w.VBox(layout=w.Layout(flex='0 1 100%')):
+        options, set_options = reacton.use_state([])
+        reacton.use_effect(lambda: set_options(current_decision.get_top_k_results(5)), [current_decision])
+        for score, option, reasoning in options:
+            with w.VBox(layout=w.Layout(border='solid lightgray', margin='0.2%', padding='0.1%', flex='0 1 100%')):  
+                v.Label(children=f'{next(engine.pkg.objects(predicate=RDFS.label, subject=option), engine.pkg.namespace_manager.curie(option))} ({score})', style=LabelStyle(font_weight='bold', width='100%'))
+                for reason in reasoning:
+                    w.Label(value=f'- {reason}')
+                w.Button(description='Confirm', on_click=lambda: [engine.handle_decision(current_decision, option), reload()])
 
 
 @reacton.component
@@ -492,6 +485,31 @@ def GraphExplorationUI(graph):
 
 
 # =========================== UTILS ===========================
+
+@reacton.component
+def SelectionMenu(title, items, set_items, reload, item_label, make_item_view, item_equality = lambda a,b : a is b):
+    with w.VBox() as main:
+        
+        with v.Card(): 
+            v.CardTitle(children=title)
+            with v.CardText():
+                current_item, set_current_item = reacton.use_state(next(iter(items), None))
+                reacton.use_effect(lambda: set_current_item(next(iter(items), None)), [items])
+                if len(items) > 0 and current_item is not None:
+                    with w.HBox():
+                        with w.VBox():
+                            for item in items:
+                                w.Button(
+                                    description=item_label(item), 
+                                    on_click=lambda item=item: set_current_item(item),
+                                    style=w.ButtonStyle(button_color='#DDEEFF' if item_equality(item, current_item) else None)
+                                )
+                        make_item_view(current_item)
+                else:
+                    w.Label(value='Nothing to select')
+                    
+        w.Button(description='Reload', on_click=reload)
+    return main
 
 
 def QueryBox(graph, initial_query=None):
