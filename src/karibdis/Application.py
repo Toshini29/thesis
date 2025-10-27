@@ -17,6 +17,9 @@ from karibdis.ProcessKnowledgeGraph import ProcessKnowledgeGraph
 from karibdis.utils import *
 from karibdis.KnowledgeGraphBPMS import KnowledgeGraphBPMS
 from karibdis.KnowledgeImporter import TextualImporter, SimpleEventLogImporter, ExistingOntologyImporter, ImporterJupyterUI2
+import datetime
+from rdflib import Literal, RDFS, XSD
+from karibdis.utils import BASE_PROCESS_ONTOLOGY as BPO
 
 
 class Application(ABC):
@@ -39,6 +42,7 @@ class JupyterApplication(ipywidgets.Box):
             ('Knowledge Modeling', reacton.render_fixed(KnowledgeModelingUI(self.system.pkg))[0]),            
             ('Process Execution', reacton.render_fixed(PrescriptionAndTaskUI(self.system.engine))[0]),
             ('Explore Graph', reacton.render_fixed(GraphExplorationUI(self.system.pkg))[0]),
+            ('Task Selection', reacton.render_fixed(TaskSelectionUI(self.system))[0]),
         ]
         root = ipywidgets.Tab()
         root.layout = ipywidgets.Layout(width='100%', height='100%')
@@ -482,7 +486,163 @@ def GraphExplorationUI(graph):
     return main
 
 
+@reacton.component
+def TaskSelectionUI(system):
+    attribute_values, set_attribute_values = reacton.use_state({})
+    with w.VBox() as main:
+        w.Label(value="Task Selection")
+        engine = system.engine
+        pkg = system.pkg
+        tasks, set_tasks = reacton.use_state(list(engine.open_tasks()))
 
+        def reload():
+            set_tasks(list(engine.open_tasks()))
+            set_attribute_values({})  # Reset form fields
+                
+        with w.VBox():
+            if len(tasks) > 0:
+                TaskExecutionUI(tasks, pkg, reload, attribute_values, set_attribute_values)
+            else: 
+                w.Label(value="No open tasks.")
+            w.Button(description="Reload Tasks", on_click=lambda *args: reload())
+            
+    return main
+
+@reacton.component
+def TaskExecutionUI(tasks, pkg, reload, attribute_values, set_attribute_values):
+    current_task, set_current_task = reacton.use_state(tasks[0][0])
+    current_case, set_current_case = reacton.use_state(tasks[0][1])
+    reacton.use_effect(lambda: set_current_task(tasks[0][0]), [tasks])
+    reacton.use_effect(lambda: set_current_case(tasks[0][1]), [tasks])
+    
+    submit_clicked, set_submit_clicked = reacton.use_state(False)
+    
+    with w.HBox() as main:
+        activity = next(pkg.objects(predicate = BPO.instanceOf, subject = current_task), None)
+        attributes = list(pkg.objects(subject=activity, predicate=BPO.writesValue))
+        
+        def on_submit_click(*args):
+            # iterate over all expected attributes (use compute_default_for when missing)
+            for attr in attributes:
+                attr_type = next(pkg.objects(predicate=BPO.dataType, subject=attr), None)
+
+                # safe read of state variable
+                current_vals = attribute_values if isinstance(attribute_values, dict) else dict(attribute_values or {})
+
+                # use stored value or compute a default now
+                val = current_vals.get(attr)
+                if val is None:
+                    val = compute_default_for(attr)
+                    # persist the default so UI and future submits see it
+                    try:
+                        set_attribute_values(lambda prev: {**(prev or {}), attr: val})
+                    except Exception:
+                        av = dict(attribute_values or {})
+                        av[attr] = val
+                        set_attribute_values(av)
+
+                
+                is_entity = attr_type is not None and not str(attr_type).startswith(str(XSD._NS))
+                if val is None and is_entity:
+                    missing_name = next(pkg.objects(predicate=RDFS.label, subject=attr), uri_to_id(attr))
+                    print(f"Cannot submit — missing entity value for: {missing_name}")
+                    return
+
+                if is_entity:
+                    # val is a curie string (from Dropdown) -> expand to URIRef
+                    obj = pkg.namespace_manager.expand_curie(val) if isinstance(val, str) else val
+                    pkg.set((current_case, attr, obj))
+                else:
+                    if attr_type == XSD.integer:
+                        lit = Literal(val, datatype=XSD.integer)
+                    elif attr_type == XSD.float:
+                        lit = Literal(val, datatype=XSD.float)
+                    elif attr_type == XSD.boolean:
+                        lit = Literal(val, datatype=XSD.boolean)
+                    else:
+                        lit = Literal(val, datatype=attr_type if attr_type is not None else None)
+                    pkg.set((current_case, attr, lit))
+
+            pkg.set((current_task, BPO.completedAt, Literal(datetime.datetime.now())))
+            reload()
+            set_submit_clicked(True)
+
+        reacton.use_effect(lambda: set_submit_clicked(False), [current_task])
+        
+        
+        with w.VBox():
+            for task, case in tasks:
+                w.Button(description=f"Task: {pkg.namespace_manager.curie(task)} - Case: {pkg.namespace_manager.curie(case)}", on_click=lambda t=task, c=case: (set_current_task(t), set_current_case(c)), style=w.ButtonStyle(button_color='#DDEEFF' if task == current_task else None))
+        
+        def compute_default_for(attr):
+            # return a default value consistent with what _init_defaults would have set
+            attr_type = next(pkg.objects(predicate=BPO.dataType, subject=attr), None)
+            if attr_type not in XSD:
+                options = list(pkg.subjects(predicate=RDF.type, object=attr_type))
+                return pkg.namespace_manager.curie(options[0]) if options else None
+            if attr_type == XSD.integer:
+                return 0
+            if attr_type == XSD.float:
+                return 0.0
+            if attr_type == XSD.boolean:
+                return False
+            return ""
+        
+        layout= w.Layout(description_width="initial")
+        
+        def on_widget_change(attr, _):
+            def handler(new_value):
+               
+                try:
+                    
+                    set_attribute_values(lambda prev: {**(prev or {}), attr: new_value})
+                except TypeError:
+                    # fallback if functional updater not supported: build a safe local copy
+                    av = dict(attribute_values or {})
+                    av[attr] = new_value
+                    set_attribute_values(av)
+            return handler
+        
+        with w.VBox():  
+            w.Label(value= f"Selected Task: {pkg.namespace_manager.curie(activity)} - {pkg.namespace_manager.curie(current_task)} ")
+            grid = w.Layout(grid_template_columns='1fr 1fr 1fr', grid_gap='8px')
+            with w.GridBox(layout=grid):
+                # header row
+                w.Label(value='Attribute')
+                w.Label(value='Value')
+                w.Label(value='Type')
+                for attr in attributes:
+                    attr_name = next(pkg.objects(predicate=RDFS.label, subject=attr), uri_to_id(attr))
+                    attr_type = next(pkg.objects(predicate=BPO.dataType, subject=attr), None)
+                    default_value = attribute_values.get(attr, compute_default_for(attr))
+                    if attr_type not in XSD:
+                        options = pkg.subjects(predicate=RDF.type, object=attr_type)
+                        short_options = [pkg.namespace_manager.curie(option) for option in options]  
+                        widget = w.Dropdown(value=default_value, options=short_options, layout=layout, on_value=on_widget_change(attr, None))
+                        type_label = pkg.namespace_manager.curie(attr_type)
+                    elif attr_type == XSD.string:
+                        widget = w.Text(value=default_value, layout=layout, on_value=on_widget_change(attr, None))
+                        type_label = 'string'
+                    elif attr_type == XSD.integer:
+                        widget = w.IntText(value=default_value, layout=layout, on_value=on_widget_change(attr, None))
+                        type_label = 'integer'
+                    elif attr_type == XSD.float:
+                        widget = w.FloatText(value=default_value, layout=layout, on_value=on_widget_change(attr, None))
+                        type_label = 'float'
+                    elif attr_type == XSD.boolean:
+                        widget = w.Checkbox(value=default_value, on_value=on_widget_change(attr, None))
+                        type_label = 'boolean'
+                    
+                    else:
+                        widget = w.Text(value=default_value, layout=layout, on_value=on_widget_change(attr, None))
+                        type_label = 'string'
+                    
+                    w.Label(value=attr_name)
+                    w.Box(children=[widget])
+                    w.Label(value=type_label)
+            w.Button(description="Submit", on_click=on_submit_click)
+                
+    return main
 
 # =========================== UTILS ===========================
 
