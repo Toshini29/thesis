@@ -63,3 +63,56 @@ declare:ChainResponseRule a sh:NodeShape ;
             }
         """ ;
 	] .
+
+
+declare:exactly_one rdf:type owl:ObjectProperty;
+    rdfs:domain :Activity ;
+    rdfs:range :Activity ;
+    rdfs:comment "This activity must occur exactly once.".
+
+
+declare:AtMostOnce a sh:PropertyShape ;
+    sh:targetClass :Task ;
+    sh:path :instanceOf__hypothetical;
+    sh:severity sh:Info;
+    sh:sparql [
+        a sh:SPARQLConstraint ;
+        sh:message "Activity '{?activity}' should be executed only once." ;
+        sh:select """
+            SELECT $this ?activity (-1 AS ?value)
+            WHERE { 
+                $this :instanceOf__hypothetical ?activity .
+                $this :partOf ?case .
+                ?activity declare:exactly_one ?activity . 
+                {
+                    SELECT (COUNT(distinct ?othertask) as ?count)
+                    WHERE {
+                        ?othertask :partOf ?case .
+                        ?othertask :instanceOf ?activity .
+                    }
+                }
+                FILTER(?count > 1)
+            }
+        """ ;
+    ] .
+
+declare:AtLeastOnce a sh:PropertyShape ;
+    sh:targetClass :Task ;
+    sh:path :instanceOf__hypothetical;
+    sh:severity sh:Info;
+    sh:sparql [
+        a sh:SPARQLConstraint ;
+        sh:message "Activity '{?activity}' should still be executed." ;
+        sh:select """
+            SELECT $this ?activity (IF(STR(?activity) = STR(?thisactivity), 0.2,-0.1) as ?value)
+            WHERE { 
+                $this :partOf ?case .
+                $this :instanceOf__hypothetical ?thisactivity .
+                ?activity declare:exactly_one ?activity .
+                FILTER NOT EXISTS {
+                    ?othertask :instanceOf ?activity .
+                }
+                
+            }
+        """ ;
+    ] .

@@ -15,7 +15,7 @@ class KGProcessEngine:
         self.event_queue = queue.Queue()
 
     def handle_event_root(self, event):
-        self.handle_event(event)
+        self.queue_event(event)
         while not self.event_queue.empty():
             self.handle_event(self.event_queue.get())
 

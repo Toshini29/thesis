@@ -315,7 +315,7 @@ from pm4py import discover_declare
 @reacton.component
 def DiscoveryUI(importer, log, run_extraction):
     declare, set_declare = reacton.use_state(None)
-    allowed_templates, set_allowed_templates = reacton.use_state(['init', 'chainresponse'])# TODO, 'exactly_one'])
+    allowed_templates, set_allowed_templates = reacton.use_state(['init', 'chainresponse', 'exactly_one'])
     if not declare:
         min_support_ratio, set_min_support_ratio = reacton.use_state(0.8)
         min_confidence_ratio, set_min_confidence_ratio = reacton.use_state(0.8)
@@ -676,7 +676,10 @@ def QueryBox(graph, initial_query=None):
     # TODO consider adding namespaces per default
     default_initial_query = ''' 
 SELECT ?subject ?predicate ?object
-WHERE {?subject ?predicate ?object} 
+WHERE {
+    ?subject ?predicate ?object . 
+    FILTER("true") .
+} 
 '''  
     current_result, set_current_result = reacton.use_state(None)
     current_result_size, set_current_result_size = reacton.use_state(0)

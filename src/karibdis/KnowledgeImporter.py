@@ -319,7 +319,7 @@ class SimpleEventLogImporter(KnowledgeImporter):
         declare_map = {
             'init' : URIRef('http://infs.cit.tum.de/karibdis/declare/init'), # TODO put in namespace once existing 
             'chainresponse' : URIRef('http://infs.cit.tum.de/karibdis/declare/chainresponse'), 
-            # 'exactly_one'
+            'exactly_one' : URIRef('http://infs.cit.tum.de/karibdis/declare/exactly_one'),
         }
 
         for relation, discovered in declare.items():
