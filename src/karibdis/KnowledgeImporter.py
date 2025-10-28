@@ -519,7 +519,7 @@ class OnlineEventImporter(SimpleEventLogImporter):
         return is_entity_column, is_value_column
     
     def attribute_relation(self, attr):
-        return self.attribute_relations.get(attr, self.namespace[quote(attr)])
+        return self.attribute_relations.get(attr, self.entity_instance_node(BPO.ProcessValue, attr))
     
     def task_id_for_event(self, event, case_id, case_node):
         try:
