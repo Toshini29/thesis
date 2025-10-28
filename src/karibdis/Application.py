@@ -184,9 +184,13 @@ def ActiveImportUI(source, set_source, pkg):
                         )
     
         elif stage == ALIGN:
+            set_title(f'Align')
+            set_subtitle(f'Importing from {source}')
             AlignmentUI(importer, set_stage, be_busy_with)
                 
         elif stage == VALIDATE:
+            set_title(f'Validate')
+            set_subtitle(f'Importing from {source}')
             ImporterJupyterUI2.validation_view(importer, complete)
         
     w.Button(description="Cancel Knowledge Import", on_click=cancel)
