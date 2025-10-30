@@ -40,9 +40,9 @@ class JupyterApplication(ipywidgets.Box):
     def base_view(self):
         tabs = [
             ('Knowledge Modeling', reacton.render_fixed(KnowledgeModelingUI(self.system.pkg))[0]),            
-            ('Process Execution', reacton.render_fixed(PrescriptionAndTaskUI(self.system.engine))[0]),
+            ('Decisionmaking', reacton.render_fixed(DecisionUI(self.system.engine))[0]),
+            ('Task Execution', reacton.render_fixed(TaskExecutionUI(self.system))[0]),
             ('Explore Graph', reacton.render_fixed(GraphExplorationUI(self.system.pkg))[0]),
-            ('Task Selection', reacton.render_fixed(TaskSelectionUI(self.system))[0]),
         ]
         root = ipywidgets.Tab()
         root.layout = ipywidgets.Layout(width='100%', height='100%')
@@ -423,7 +423,7 @@ def AlignmentUI(importer, set_stage, be_busy_with):
     return main
 
 @reacton.component
-def PrescriptionAndTaskUI(engine):
+def DecisionUI(engine):
     decisions, set_decisions = reacton.use_state(list(engine.open_decisions()))
     def reload():
         set_decisions(list(engine.open_decisions()))
@@ -435,7 +435,7 @@ def PrescriptionAndTaskUI(engine):
         return DecisionsBody(engine, decision, reload)
     
     return SelectionMenu(
-        "Decision UI", 
+        "Decisionmaking", 
         decisions, 
         set_decisions, 
         reload, 
@@ -478,6 +478,7 @@ def GraphExplorationUI(graph):
     reacton.use_effect(update_subgraph, [current_result])
     
     with w.VBox() as main:
+        v.CardTitle(children='Graph Exploration')
         GraphViz(current_graph)
 
         if not reload:
@@ -491,10 +492,10 @@ def GraphExplorationUI(graph):
 
 
 @reacton.component
-def TaskSelectionUI(system):
+def TaskExecutionUI(system): # TODO refactor to use SelectionMenu like DecisionUI
     attribute_values, set_attribute_values = reacton.use_state({})
     with w.VBox() as main:
-        w.Label(value="Task Selection")
+        v.CardTitle(children='Task Execution')
         engine = system.engine
         pkg = system.pkg
         tasks, set_tasks = reacton.use_state(list(engine.open_tasks()))
@@ -505,7 +506,7 @@ def TaskSelectionUI(system):
                 
         with w.VBox():
             if len(tasks) > 0:
-                TaskExecutionUI(tasks, pkg, reload, attribute_values, set_attribute_values)
+                TaskBody(tasks, pkg, reload, attribute_values, set_attribute_values)
             else: 
                 w.Label(value="No open tasks.")
             w.Button(description="Reload Tasks", on_click=lambda *args: reload())
@@ -513,7 +514,7 @@ def TaskSelectionUI(system):
     return main
 
 @reacton.component
-def TaskExecutionUI(tasks, pkg, reload, attribute_values, set_attribute_values):
+def TaskBody(tasks, pkg, reload, attribute_values, set_attribute_values):
     current_task, set_current_task = reacton.use_state(tasks[0][0])
     current_case, set_current_case = reacton.use_state(tasks[0][1])
     reacton.use_effect(lambda: set_current_task(tasks[0][0]), [tasks])
