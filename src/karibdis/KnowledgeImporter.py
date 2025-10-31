@@ -157,9 +157,6 @@ class KnowledgeImporter(ABC):
             # TODO: Handle relations that are merged
 
     def prepare_trial_by_llm(self):
-        from langchain_openai import ChatOpenAI
-        from langchain_core.prompts import ChatPromptTemplate
-        from dotenv import load_dotenv
         load_dotenv()
 
 
@@ -535,8 +532,10 @@ class TextualImporter(KnowledgeImporter):
     
     load_dotenv()
 
-    def __init__(self, pkg, llm=ChatOpenAI(temperature=0, model="gpt-4o-mini")):
+    def __init__(self, pkg, llm=None):
         super().__init__(pkg)
+        if llm is None:
+            llm = ChatOpenAI(temperature=0, model="gpt-4o-mini")
         self.llm = llm
 
     def import_content_from_statement(self, statement : str):
