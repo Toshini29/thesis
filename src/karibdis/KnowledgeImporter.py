@@ -321,10 +321,11 @@ class SimpleEventLogImporter(KnowledgeImporter):
 
         for relation, discovered in declare.items():
             for relations, confidence_support in discovered.items():
-                is_unary = type(relations) == str
-                if is_unary:
-                    relations = (relations, relations)
-                self.add((self.activity_node(relations[0]), declare_map[relation], self.activity_node(relations[1])))
+                if confidence_support:
+                    is_unary = type(relations) == str
+                    if is_unary:
+                        relations = (relations, relations)
+                    self.add((self.activity_node(relations[0]), declare_map[relation], self.activity_node(relations[1])))
 
     def get_col_key(self, col):
         return self.attribute_aliases.get(col, col)

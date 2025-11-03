@@ -366,11 +366,12 @@ def DiscoveryUI(importer, log, run_extraction):
             v.ToolbarTitle(children=relation)
             for relations, data in x.items():
                 with v.ListItem() as main:
-                    # TODO v.Checkbox(v_model=declare, on_v_model=lambda)
-                    v.Label(children= f'{relations}')
+                    v.Checkbox(v_model=data, on_v_model=lambda value, relation=relation, relations=relations: (set_declare({**declare, relation : {**declare.get(relation, dict()), relations: value}})))
+                    v.Label(children= f'{relations}', disabled=not data)
                 #w.Label(value=f'\t{relations} : {data}')
-        
-        w.Button(description="Load Constraints", on_click=lambda: run_extraction(lambda: importer.import_declare(declare)))  
+        with w.HBox():
+            w.Button(description="Load Constraints", on_click=lambda: run_extraction(lambda: importer.import_declare(declare))) 
+            w.Button(description="Adapt Parameters", on_click=lambda: set_declare(None))  
 
 
 
