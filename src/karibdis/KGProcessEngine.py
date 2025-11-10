@@ -29,13 +29,6 @@ class KGProcessEngine:
             else:
                 pass
                 # TODO self.infer_decisions()
-
-        # TODO temp
-        added_tasks = list(filter(lambda triple : triple[1] == BPO.instanceOf, event.get('added', set())))
-        for s, p, o in added_tasks:
-            triple_to_add = (s, BPO.completedAt, Literal(datetime.datetime.now()))
-            self.pkg.add(triple_to_add)
-            self.queue_event({'knowledge_updated': True, 'removed': set(), 'added': {triple_to_add}})
                         
 
     def queue_event(self, event):
@@ -69,6 +62,7 @@ class KGProcessEngine:
         new_case = (id, RDF.type, BPO.Case)
         self.pkg.add(new_case)
         self.handle_event_root({'knowledge_updated': True, 'added': {new_case}, 'removed': set()})
+        return id
 
 
     def close_case(self, case_node):
@@ -79,6 +73,7 @@ class KGProcessEngine:
 
 
     def complete_task(self, task_node):
+        print('Completing task '+str(task_node))
         to_set = (task_node, BPO.completedAt, Literal(datetime.datetime.now()))
         self.pkg.add(to_set)
         self.handle_event_root({'knowledge_updated': True, 'added': {to_set}, 'removed': set()})
@@ -203,10 +198,7 @@ class Decision:
         shuffle(options)
                 
         for option in options:
-            test_result = self.test_option(option)
-            conforms, results_graph, results_text = test_result
-            # print(results_text)
-            score, verdict = self.calculate_score(test_result)
+            score, verdict = self.evaluate_option(option)
             if score >= threshold:
                 verdicts.append((score, option, verdict))
 
@@ -214,6 +206,7 @@ class Decision:
         if k < 1:
             k = len(verdicts)
         return verdicts[:k]
+    
 
     def get_options(self):
         target_type = self.context.get('target_type', BPO.Activity)
@@ -221,6 +214,12 @@ class Decision:
             return list(self.engine.pkg.subjects(predicate=RDF.type, object=BPO.Activity))
         elif target_type == BPO.Resource:
             return list(self.graph_to_check.available_resources()) # TODO method currently not implemented anymore
+
+
+    def evaluate_option(self, option):
+        test_result = self.test_option(option)
+        # print(results_text)
+        return self.calculate_score(test_result)
 
     def calculate_score(self, test_result):
         conforms, results_graph, results_text = test_result
