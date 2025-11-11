@@ -98,6 +98,7 @@ class KGProcessEngine:
             yield Decision(self, task, BPO.instanceOf, {'case' : case, 'target_type': BPO.Activity})
     
     def handle_decision(self, decision_to_make, decision_result):
+        print(f'Made decision {str(decision_to_make.subject)} --{str(decision_to_make.predicate)}--> {str(decision_result)}')
         triple_to_add = (decision_to_make.subject, decision_to_make.predicate, decision_result)
         self.pkg.add(triple_to_add)
         self.queue_event({'knowledge_updated': True, 'added': {triple_to_add}, 'deleted': set()})
@@ -242,7 +243,7 @@ class Decision:
             else:
                 score += float('-inf')
             message = next(results_graph.objects(predicate=SH_resultMessage, subject=result))
-            verdict.append(de_urify(message))
+            verdict.append(de_urify(message, self.graph_to_check))
             # print('Ah, interesting: '+message)
         return score, verdict
     

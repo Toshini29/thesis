@@ -245,7 +245,7 @@ class SimpleEventLogImporter(KnowledgeImporter):
         self.namespace = namespace
         self.addition_graph.bind(self.namespace_name, self.namespace, override=True)
 
-        self.attribute_aliases = attribute_aliases
+        self.attribute_aliases = {** default_attribute_aliases, ** attribute_aliases}
         self.recalculate_reverse_aliases()
 
         self.ignore_columns = set(ignore_columns).union(set([BPO.Case, Keys.ID, Keys.LIFECYCLE, Keys.TIMESTAMP])) # These are handled differently
@@ -303,13 +303,14 @@ class SimpleEventLogImporter(KnowledgeImporter):
                 if is_value_column:
                     type_hint = self.infer_value_col_type(log[col])
                     print(f'=> Value column of type {type_hint}')
-                    
-                value_node = self.entity_instance_node(BPO.ProcessValue, col) # TODO clarify naming: is actually relation
-                self.add((value_node, RDF.type, BPO.ProcessValue))
-                self.add((value_node, BPO.dataType , type_hint))
-                for activity in log[log[col].notnull()][activity_col].unique(): 
-                    activity_node = self.activity_node(activity) 
-                    self.add((activity_node, BPO.writesValue , value_node))
+                
+                if col_key not in [BPO.Activity]:
+                    value_node = self.entity_instance_node(BPO.ProcessValue, col) # TODO clarify naming: is actually relation
+                    self.add((value_node, RDF.type, BPO.ProcessValue))
+                    self.add((value_node, BPO.dataType , type_hint))
+                    for activity in log[log[col].notnull()][activity_col].unique(): 
+                        activity_node = self.activity_node(activity) 
+                        self.add((activity_node, BPO.writesValue , value_node))
     
 
     def import_declare(self, declare):
@@ -536,7 +537,7 @@ class TextualImporter(KnowledgeImporter):
     def __init__(self, pkg, llm=None):
         super().__init__(pkg)
         if llm is None:
-            llm = ChatOpenAI(temperature=0, model="gpt-4o-mini")
+            llm = ChatOpenAI(temperature=0, model="gpt-4o-mini", max_tokens=None)
         self.llm = llm
 
     def import_content_from_statement(self, statement : str):
@@ -655,7 +656,7 @@ class ExistingOntologyImporter(KnowledgeImporter):
         self.addition_graph += result
         # Add predicates metadata so annotation properties can be used
         predicates = set(self.addition_graph.predicates())
-        self.addition_graph += list(filter(lambda triple: triple[0] in predicates or triple[2] in predicates, ontology))
+        self.addition_graph += list(filter(lambda triple: (triple[0] in predicates or triple[2] in predicates) and triple[1] not in [OWL.annotatedProperty], ontology)) # TODO annotated properties indicate axioms in a different way and might be valid, but might lead to huge overhead (see mondo)
 
     def import_ontology(self, ontology, initial_query=None):
 

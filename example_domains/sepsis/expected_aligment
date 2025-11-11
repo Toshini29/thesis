@@ -1,0 +1,8 @@
+[(rdflib.term.URIRef('http://www.semanticweb.org/zchero/ontologies/2023/11/SepsisOntology#Leukocyte_Count'),
+  rdflib.term.URIRef('http://example.org/ProcessValue_Leucocytes')),
+ (rdflib.term.URIRef('http://www.semanticweb.org/zchero/ontologies/2023/11/SepsisOntology#C-Reactive_Protein'),
+  rdflib.term.URIRef('http://example.org/ProcessValue_CRP')),
+ (rdflib.term.URIRef('http://www.semanticweb.org/zchero/ontologies/2023/11/SepsisOntology#Lactate'),
+  rdflib.term.URIRef('http://example.org/ProcessValue_LacticAcid')),
+ (rdflib.term.URIRef('http://www.semanticweb.org/zchero/ontologies/2023/11/SepsisOntology#Hypoxia'),
+  rdflib.term.URIRef('http://example.org/ProcessValue_Hypoxie'))]

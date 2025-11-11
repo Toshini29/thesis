@@ -74,11 +74,12 @@ LLM_CACHE_FOLDER = './llm_cache'
 def uri_to_id(uri):
     return unquote(uri.split('/')[-1]) # TODO this assumes a specific id translation; replace
 
-def de_urify(string):
+def de_urify(string, pkg):
     def replace_uri(uri_match):
         uri = uri_match.group(1)
-        return '\'' + uri_to_id(uri) + '\''
-    return re.sub(r"'(http://example.org.*?)'", replace_uri, string) # TODO this assumes a specific id translation; replace
+        return '\'' + pkg.label(URIRef(uri)) + '\''
+    uri_in_string_regex = r"'(https?://.*?)'"
+    return re.sub(uri_in_string_regex, replace_uri, string)
 
 
 def nodes_in_dist(graph, nodes, dist, filter_func=lambda x: not x.startswith(OWL) and not x.startswith(RDF) and not x.startswith(RDFS)):

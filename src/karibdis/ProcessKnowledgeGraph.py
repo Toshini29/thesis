@@ -54,3 +54,6 @@ class ProcessKnowledgeGraph(Graph):
     def add_rule(self, rule):
         self.addN((s, p, o, URIRef('http://infs.cit.tum.de/karibdis/rules')) for s, p, o in rule) # TODO: magic string and also no thought put into this 
 
+
+    def label(self, uri):
+        return next(self.objects(subject=uri, predicate=RDFS.label), self.namespace_manager.curie(uri))

@@ -430,7 +430,7 @@ def DecisionUI(engine):
         set_decisions(list(engine.open_decisions()))
 
     def decision_label(decision):
-        return engine.pkg.namespace_manager.curie(decision.subject)
+        return engine.pkg.label(decision.subject)
 
     def make_decision_view(decision):
         return DecisionBody(engine, decision, reload)
@@ -452,14 +452,14 @@ def DecisionUI(engine):
 @reacton.component
 def DecisionBody(engine, current_decision, reload):
     context_case = current_decision.context.get('case', None)
-    with w.VBox(layout=w.Layout(flex='0 1 100%')):
+    with w.VBox(layout=w.Layout(overflow='scroll', height='60vh', width='100%')) as main:
         options, set_options = reacton.use_state([])
-        reacton.use_effect(lambda: set_options(current_decision.get_top_k_results(5)), [current_decision])
+        reacton.use_effect(lambda: set_options(current_decision.get_top_k_results(20)), [current_decision])
         for score, option, reasoning in options:
-            with w.VBox(layout=w.Layout(border='solid lightgray', margin='0.2%', padding='0.1%', flex='0 1 100%')):  
-                v.Label(children=f'{next(engine.pkg.objects(predicate=RDFS.label, subject=option), engine.pkg.namespace_manager.curie(option))} ({score})', style=LabelStyle(font_weight='bold', width='100%'))
+            with w.VBox(layout=w.Layout(border='solid #FAFAFA', margin='0.2%', padding='0.1%', flex='0 0 auto')):  
+                v.Label(children=f'{engine.pkg.label(option)} ({score})', style=LabelStyle(font_weight='bold', width='100%'))
                 for reason in reasoning:
-                    w.Label(value=f'- {reason}')
+                    w.Label(value=f'- {reason}') # TODO: Add single scores?
                 w.Button(description='Confirm', on_click=lambda option=option: [engine.handle_decision(current_decision, option), reload()])
         if context_case is not None:
             w.Button(description='Close Case', on_click=lambda: [engine.close_case(context_case), reload()], layout=w.Layout(flex='0 0 auto'))
