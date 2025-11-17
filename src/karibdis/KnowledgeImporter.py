@@ -100,7 +100,6 @@ class KnowledgeImporter(ABC):
         self.pkg = pkg
         self.addition_graph = Graph()
         copy_namespaces(self.addition_graph, self.pkg)
-        self.ui = ui if ui != None else ImporterJupyterUI(self)
 
     def add(self, triple):
         self.addition_graph.add(triple)
@@ -184,10 +183,6 @@ Please output only True or False, whether the entities represented are related.'
             ).content == 'True'
         
         return trial_by_llm
-
-    ### ===== Validate =====
-    def validate(self):
-        self.ui.show_validation()
 
     def reload_from_text(self, text):
         self.addition_graph = Graph() 
@@ -614,6 +609,8 @@ For generating the rules, please consider the following contextual schema inform
         except json.JSONDecodeError as e:
             self.log(str(e), logging.ERROR)
 
+        self.log(parsed_response)
+
         results = []
         
         for id, rule in enumerate(parsed_response.keys()):
@@ -623,7 +620,7 @@ For generating the rules, please consider the following contextual schema inform
         
             
             result_shacl += f'''
-ex:{rule_id} a sh:NodeShape ;
+rules:{rule_id} a sh:NodeShape ;
     sh:targetClass :Case ;
     sh:sparql [
         a sh:SPARQLConstraint ;
@@ -634,6 +631,7 @@ ex:{rule_id} a sh:NodeShape ;
     ] .
 
 '''
+        result_shacl.replace('?case', '$this')
         self.addition_graph.parse(data=result_shacl)
 
     def get_query_triples(self):
@@ -657,274 +655,3 @@ class ExistingOntologyImporter(KnowledgeImporter):
         # Add predicates metadata so annotation properties can be used
         predicates = set(self.addition_graph.predicates())
         self.addition_graph += list(filter(lambda triple: (triple[0] in predicates or triple[2] in predicates) and triple[1] not in [OWL.annotatedProperty], ontology)) # TODO annotated properties indicate axioms in a different way and might be valid, but might lead to huge overhead (see mondo)
-
-    def import_ontology(self, ontology, initial_query=None):
-
-        with self.ui:
-            self.ui.prompt_selection_query(ontology, callback_accept=lambda result: self.accept_filtered_result(result, ontology), initial_query=initial_query)
-
-
-
-class ImporterUI(ABC):
-    def __init__(self, importer : KnowledgeImporter):
-        assert importer is not None
-        self.importer = importer
-    
-    @abstractmethod
-    def show_validation(self):
-        pass
-
-    @abstractmethod
-    def show_alignment_validation(self, llm_approved):
-        pass
-
-    @abstractmethod
-    def prompt_selection_query(self, initial_query=None, callback_accept=None):
-        pass
-
-    @abstractmethod
-    def __enter__(self):
-        pass
-
-    @abstractmethod
-    def __exit__(self, exc_type, exc_value, exc_traceback):
-        pass
-
-import ipywidgets
-from IPython.display import display, clear_output    
-from jupyter_ui_poll import ui_events
-import time
-
-class ImporterJupyterUI(ImporterUI):
-
-    def __init__(self, importer : KnowledgeImporter):
-        super().__init__(importer)
-
-    def __enter__(self):
-        # TODO to be implemented
-        pass
-
-
-    def __exit__(self, exc_type, exc_value, exc_traceback):
-        # TODO to be implemented
-        pass
-
-    def show_alignment_validation(self, llm_approved):
-        g1 = Graph()
-        copy_namespaces(g1, self.importer.addition_graph)
-        g2 = Graph()
-        copy_namespaces(g2, self.importer.addition_graph)
-        hidden = URIRef('http://example.org/hidden')
-
-        # colors = dict()
-        for source_id, target_id in llm_approved:
-            g1.add((source_id, OWL.sameAs, target_id))
-            g2.add((target_id, URIRef('hidden'), hidden))
-            # colors[source_id] = '#99AA00'
-            # colors[target_id] = '#1100AA' 
-            
-        alignment_knowledge_importer = KnowledgeImporter(g2)
-        alignment_knowledge_importer.addition_graph = g1
-        alignment_knowledge_importer.validate()
-
-        self.importer.apply_alignment(list(filter(lambda triple: hidden not in triple, g2)))
-
-        # draw_graph(g, lambda _ : colors)
-
-    def show_validation(self):
-        self.loaded = False
-        self.output = ipywidgets.Output()
-        self.show_graph()
-        display(self.output)
-        with ui_events() as poll:
-            while self.loaded is False:
-                poll(10)          # React to UI events (up to 10 at a time)
-                time.sleep(0.1)
-
-    def show_graph(self, b=None):
-        button_accept = ipywidgets.Button(description='Accept')
-        def accept(b=None):
-            self.importer.load()
-            with self.output:
-                self.output.clear_output()
-            print('Data successfully loaded into the knowledge graph.')
-            self.loaded = True
-        button_accept.on_click(accept)
-        button_edit = ipywidgets.Button(description='Edit')
-        button_cancel = ipywidgets.Button(description='Cancel')
-        button_edit.on_click(self.show_edit)
-        with self.output:
-            self.output.clear_output()
-            self.visualize_addition_graph()
-            display(button_accept, button_edit, button_cancel)
-
-    
-    def visualize_addition_graph(self): 
-        return draw_graph(self.importer.addition_graph, color_func=lambda _: dict(zip_longest(self.importer.addition_graph.all_nodes() - self.importer.pkg.all_nodes(), [], fillvalue='#99AA00')))
-
-    def show_edit(self, b=None):
-        init_value = self.importer.addition_graph.serialize(format='ttl')
-        text = ipywidgets.Textarea(
-            layout = ipywidgets.Layout(width='98%'),
-            value = init_value,
-            rows = len(init_value.split('\n'))
-        )
-        button_accept = ipywidgets.Button(description='Accept Edit')
-        def accept_edit(b=None):
-            if text.value != init_value:
-                self.importer.reload_from_text(text.value)
-            else:
-                print('No changes')
-            self.show_graph()
-        button_accept.on_click(accept_edit)
-        button_cancel = ipywidgets.Button(description='Cancel Edit')
-        button_cancel.on_click(self.show_graph)
-        with self.output:
-            self.output.clear_output()
-            display(ipywidgets.Label('Data to load'), text, button_accept, button_cancel)
-
-    def prompt_selection_query(self, graph, initial_query=None, callback_accept=None):
-        self.output = ipywidgets.Output()
-
-        label = ipywidgets.Label()
-        def update_label(result_size):
-            label.value = f'You are about to load {result_size} tuples. Adapt the query if appropriate.'
-
-        if initial_query is None: # TODO consider adding namespaces per default
-            initial_query = '''
-SELECT ?subject ?predicate ?object
-WHERE {?subject ?predicate ?object} 
-'''
-        text = ipywidgets.Textarea(
-            layout = ipywidgets.Layout(width='98%'),
-            value = initial_query,
-            rows = len(initial_query.split('\n'))
-        )
-
-        button_accept = ipywidgets.Button(description='Load Data')
-        def accept(b=None):
-            with self.output:
-                callback_accept(graph.query(text.value)) # TODO reduc unnecessary duplicate query running
-                self.output.clear_output()
-                print('Ontology successfully queries.')
-        button_accept.on_click(accept)
-
-        button_edit = ipywidgets.Button(description='Update Query')
-        def edit(b=None):
-            button_edit.disabled = True
-            update_label(len(graph.query(text.value)))
-            button_edit.disabled = False
-
-        button_edit.on_click(edit)
-
-        button_cancel = ipywidgets.Button(description='Cancel')
-        with self.output:
-            self.output.clear_output()
-            edit()
-            display(label, text, button_accept, button_edit, button_cancel)
-
-        display(self.output)
-
-import reacton 
-import reacton.ipywidgets as w
-
-class ImporterJupyterUI2(ImporterUI):
-
-    def __init__(self, importer : KnowledgeImporter):
-        super().__init__(importer)
-
-    def __enter__(self):
-        # TODO to be implemented
-        pass
-
-
-    def __exit__(self, exc_type, exc_value, exc_traceback):
-        # TODO to be implemented
-        pass
-
-    def show_alignment_validation(self, llm_approved):
-        display(self.alignment_view(self.importer, llm_approved, self.importer.apply_alignment))
-
-    @staticmethod
-    @reacton.component
-    def alignment_view(importer, llm_approved, callback_done):
-        g1 = Graph()
-        copy_namespaces(g1, importer.addition_graph)
-        g2 = Graph()
-        copy_namespaces(g2, importer.addition_graph)
-        hidden = URIRef('http://example.org/hidden')
-
-        # colors = dict()
-        for source_id, target_id in llm_approved:
-            g1.add((source_id, OWL.sameAs, target_id))
-            g2.add((target_id, URIRef('hidden'), hidden))
-            # colors[source_id] = '#99AA00'
-            # colors[target_id] = '#1100AA' 
-            
-        alignment_knowledge_importer = KnowledgeImporter(g2)
-        alignment_knowledge_importer.addition_graph = g1
-
-        def confirm_alignment():
-            alignment_knowledge_importer.load()
-            callback_done(list(filter(lambda triple: hidden not in triple, g2)))
-
-        return ImporterJupyterUI2.validation_view(alignment_knowledge_importer, confirm_alignment)
-
-        # importer.apply_alignment(list(filter(lambda triple: hidden not in triple, g2)))
-
-        # draw_graph(g, lambda _ : colors)
-
-    def show_validation(self):
-        display(self.validation_view(self.importer, lambda:self.importer.load()))
-
-    @staticmethod
-    @reacton.component
-    def validation_view(importer, callback_done):
-        with w.VBox(layout = ipywidgets.Layout(width='100%', height='98%')) as main:
-            editing, set_editing = reacton.use_state(False)
-            if not editing:
-                with w.HBox():
-                    w.Button(description='Accept', on_click=callback_done)
-                    w.Button(description='Edit', on_click=lambda: set_editing(True))
-                    # w.Button(description='Cancel')
-                if len(importer.addition_graph) == 0:
-                    w.Label(value='No data to visualize.')
-                elif len(importer.addition_graph.all_nodes()) > 600:
-                    w.Label(value=f'Too many nodes ({len(importer.addition_graph.all_nodes())}) to visualize.')
-                else:
-                    graph = ImporterJupyterUI2.visualize_addition_graph(importer)
-                    display(graph)
-            else:
-                ImporterJupyterUI2.show_edit(importer, importer.serialize(format='ttl'), set_editing)
-        return main
-
-    
-    @staticmethod
-    def visualize_addition_graph(importer): 
-        return draw_graph(importer.addition_graph, color_func=lambda _: dict(zip_longest(importer.addition_graph.all_nodes() - importer.pkg.all_nodes(), [], fillvalue='#99AA00')))
-
-    @staticmethod
-    @reacton.component
-    def show_edit(importer, init_value, set_editing):
-        with w.VBox(layout = ipywidgets.Layout(width='100%', height='98%')) as main:
-            text_value, set_text_value = reacton.use_state(init_value)
-            text = w.Textarea(
-                layout = ipywidgets.Layout(width='98%'),
-                value = text_value,
-                rows = len(text_value.split('\n')),
-                on_value=set_text_value
-            )
-            def accept_edit(b=None):
-                if text_value != init_value:
-                    importer.reload_from_text(text_value)
-                else:
-                    print('No changes')
-                set_editing(False)
-
-            button_accept = w.Button(description='Accept Edit', on_click=accept_edit)
-            button_cancel = w.Button(description='Cancel Edit', on_click=lambda: set_editing(False))
-        return main
-    
-    def prompt_selection_query(self, graph, initial_query=None, callback_accept=None):
-        pass
-

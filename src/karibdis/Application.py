@@ -1,4 +1,5 @@
 from abc import ABC, abstractmethod
+from itertools import zip_longest
 import os
 import ipywidgets
 from IPython.display import display, clear_output, Javascript
@@ -16,7 +17,7 @@ import json
 from karibdis.ProcessKnowledgeGraph import ProcessKnowledgeGraph
 from karibdis.utils import *
 from karibdis.KnowledgeGraphBPMS import KnowledgeGraphBPMS
-from karibdis.KnowledgeImporter import TextualImporter, SimpleEventLogImporter, ExistingOntologyImporter, ImporterJupyterUI2
+from karibdis.KnowledgeImporter import KnowledgeImporter, TextualImporter, SimpleEventLogImporter, ExistingOntologyImporter
 import datetime
 from rdflib import Literal, RDFS, XSD
 from karibdis.utils import BASE_PROCESS_ONTOLOGY as BPO
@@ -48,7 +49,7 @@ class JupyterApplication(ipywidgets.Box):
         root.layout = ipywidgets.Layout(width='100%', height='100%')
         root.children = [tab[1] for tab in tabs]
         for tab in root.children:
-            tab.layout = ipywidgets.Layout(width='100%', height='100%')
+            tab.layout = ipywidgets.Layout(width='100%', height='60vh')
         root.titles = [tab[0] for tab in tabs]
         return root
 
@@ -164,24 +165,8 @@ def ActiveImportUI(source, set_source, pkg):
                     EventLogExtractionUI(importer, set_subtitle, be_busy_with, run_extraction)
                                 
                 elif source == EXISTING_ONTOLOGY:
-                    ontology, set_ontology = reacton.use_state(None)
+                    ExistingOntologyExtractionUI(importer, set_subtitle, be_busy_with, run_extraction)
 
-                    if ontology is not None:
-                        QueryView(ontology, set_processing, callback_accept=lambda subgraph: run_extraction(lambda: importer.accept_filtered_result(subgraph, ontology)))
-                    else: 
-                        def upload(files):
-                            file = files[0]
-                            data = str(file.content,'utf-8')
-                            graph = Graph().parse(data=data, format='ttl')
-                            set_ontology(graph)
-                        
-                        w.FileUpload(
-                            description = 'Upload Ontology File',
-                            accept='.ttl',
-                            on_accept=lambda **args: print(args),
-                            multiple=False,
-                            on_value=upload
-                        )
     
         elif stage == ALIGN:
             set_title(f'Align')
@@ -191,7 +176,7 @@ def ActiveImportUI(source, set_source, pkg):
         elif stage == VALIDATE:
             set_title(f'Validate')
             set_subtitle(f'Importing from {source}')
-            ImporterJupyterUI2.validation_view(importer, complete)
+            ValidationView(importer, complete, set_stage)
         
     w.Button(description="Cancel Knowledge Import", on_click=cancel)
 
@@ -375,8 +360,55 @@ def DiscoveryUI(importer, log, run_extraction):
 
 
 
+
 @reacton.component
-def QueryView(graph, set_processing, initial_query=None, callback_accept=None):
+def ExistingOntologyExtractionUI(importer, set_subtitle, be_busy_with, run_extraction):
+    ontology, set_ontology = reacton.use_state(None)
+    prompt_url, set_prompt_url = reacton.use_state(False)
+
+    if ontology is not None:
+        QueryView(ontology, be_busy_with, callback_accept=lambda subgraph: run_extraction(lambda: importer.accept_filtered_result(subgraph, ontology)))
+    elif not prompt_url: 
+        def upload(files):
+            file = files[0]
+            data = str(file.content,'utf-8')
+            graph = Graph().parse(data=data, format='ttl')
+            set_ontology(graph)
+        
+        w.FileUpload(
+            description = 'Upload Ontology File',
+            accept='.ttl',
+            on_accept=lambda **args: print(args),
+            multiple=False,
+            on_value=upload
+        )
+
+        w.Button(description='Load from URL', on_click=lambda: set_prompt_url(True))
+    else:
+        url, set_url = reacton.use_state('')
+        
+        def load_from_url(url):
+            graph = Graph()
+            for format in [None, 'xml', 'n3']: # Brute force format
+                try:
+                    graph.parse(url, format=format)
+                    break
+                except:
+                    continue
+            set_ontology(graph)
+
+        w.Text(
+            value=url,
+            placeholder='Ontology URL:',
+            on_value=set_url,
+            layout=ipywidgets.Layout(width='80%')
+        )
+        w.Button(description='Load', on_click=lambda : load_from_url(url))
+
+
+
+@reacton.component
+def QueryView(graph, be_busy_with, initial_query=None, callback_accept=None):
 
 
     with w.VBox(layout = ipywidgets.Layout(width='100%', height='98%')) as main:  
@@ -398,12 +430,10 @@ def QueryView(graph, set_processing, initial_query=None, callback_accept=None):
 
             else:
                 def edit(b=None):
-                    set_processing(True)
                     button_edit.disabled = True
                     run_query()
                     button_edit.disabled = False
-                    set_processing(False)
-                button_edit = w.Button(description='Test Query', on_click=edit)
+                button_edit = w.Button(description='Test Query', on_click=lambda : be_busy_with(edit))
 
         # TODO one initial edit
 
@@ -419,9 +449,34 @@ def AlignmentUI(importer, set_stage, be_busy_with):
         importer.apply_alignment(accepted_alignment)
         set_stage(VALIDATE)
     with w.VBox() as main:
-        ImporterJupyterUI2.alignment_view(importer, alignment, apply_alignment)
+        AlignmentView(importer, alignment, apply_alignment)
         w.Button(description="Automated Alignment", on_click=lambda: be_busy_with(lambda: set_alignment(importer.determine_alignment())))  
     return main
+
+@reacton.component
+def AlignmentView(importer, llm_approved, callback_done):
+    g1 = Graph()
+    copy_namespaces(g1, importer.addition_graph)
+    g2 = Graph()
+    copy_namespaces(g2, importer.addition_graph)
+    hidden = URIRef('http://example.org/hidden')
+
+    # colors = dict()
+    for source_id, target_id in llm_approved:
+        g1.add((source_id, OWL.sameAs, target_id))
+        g2.add((target_id, URIRef('hidden'), hidden))
+        # colors[source_id] = '#99AA00'
+        # colors[target_id] = '#1100AA' 
+        
+    alignment_knowledge_importer = KnowledgeImporter(g2)
+    alignment_knowledge_importer.addition_graph = g1
+
+    def confirm_alignment():
+        alignment_knowledge_importer.load()
+        callback_done(list(filter(lambda triple: hidden not in triple, g2)))
+
+    return ValidationView(alignment_knowledge_importer, confirm_alignment)
+
 
 @reacton.component
 def DecisionUI(engine):
@@ -448,6 +503,35 @@ def DecisionUI(engine):
             item_equality=lambda decision_a, decision_b : decision_a.subject == decision_b.subject
         )
     return main
+
+
+
+@reacton.component
+def ValidationView(importer, callback_done, set_stage=None):
+    with w.VBox(layout = ipywidgets.Layout(width='100%', height='98%')) as main:
+        editing, set_editing = reacton.use_state(False)
+        if not editing:
+            with w.HBox():
+                w.Button(description='Accept', on_click=callback_done)
+                w.Button(description='Edit', on_click=lambda: set_editing(True))
+                if set_stage is not None:
+                    w.Button(description='Go back to Alignment', on_click=lambda: set_stage(ALIGN))
+                # w.Button(description='Cancel')
+            if len(importer.addition_graph) == 0:
+                w.Label(value='No data to visualize.')
+            elif len(importer.addition_graph.all_nodes()) > 600:
+                w.Label(value=f'Too many nodes ({len(importer.addition_graph.all_nodes())}) to visualize.')
+            else:
+                graph = visualize_addition_graph(importer)
+                display(graph)
+        else:
+            TextEditor(importer, importer.serialize(format='ttl'), set_editing)
+    return main
+
+
+def visualize_addition_graph(importer): # TODO Partial duplicate to GraphViz
+    return draw_graph(importer.addition_graph, color_func=lambda _: dict(zip_longest(importer.addition_graph.all_nodes() - importer.pkg.all_nodes(), [], fillvalue='#99AA00')))
+
 
 @reacton.component
 def DecisionBody(engine, current_decision, reload):
@@ -614,7 +698,7 @@ def TaskBody(tasks, engine, reload, attribute_values, set_attribute_values):
             return handler
         
         with w.VBox():  
-            w.Label(value= f"Selected Task: {pkg.namespace_manager.curie(activity)} - {pkg.namespace_manager.curie(current_task)} ")
+            w.Label(value= f"Selected Task: {pkg.label(activity)} - {pkg.label(current_task)} ")
             grid = w.Layout(grid_template_columns='1fr 1fr 1fr', grid_gap='8px')
             with w.GridBox(layout=grid):
                 # header row
@@ -679,6 +763,28 @@ def SelectionMenu(title, items, set_items, reload, item_label, make_item_view, i
                     w.Label(value='Nothing to select')
                     
         w.Button(description='Reload', on_click=reload)
+    return main
+
+
+@reacton.component
+def TextEditor(importer, init_value, set_editing):
+    with w.VBox(layout = ipywidgets.Layout(width='100%', height='98%')) as main:
+        text_value, set_text_value = reacton.use_state(init_value)
+        text = w.Textarea(
+            layout = ipywidgets.Layout(width='98%'),
+            value = text_value,
+            rows = len(text_value.split('\n')),
+            on_value=set_text_value
+        )
+        def accept_edit(b=None):
+            if text_value != init_value:
+                importer.reload_from_text(text_value)
+            else:
+                print('No changes')
+            set_editing(False)
+
+        button_accept = w.Button(description='Accept Edit', on_click=accept_edit)
+        button_cancel = w.Button(description='Cancel Edit', on_click=lambda: set_editing(False))
     return main
 
 
