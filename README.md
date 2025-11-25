@@ -4,7 +4,7 @@
 
 <sub>![CI](https://github.com/INSM-TUM/karibdis/actions/workflows/python-test.yml/badge.svg)</sub>
 
-Karibdis is a research prototype **Knowledge-graph-based Business Process Management System** to enable semantically explainable process execution support. 
+Karibdis is a proof-of-concept research prototype for a **Knowledge-graph-based Business Process Management System** to enable semantically explainable process execution support. 
 It allows to import process knowledge from various sources, such as text, event logs, or existing ontologies and knowledge graphs. 
 The imported knowledge is stored in an internal RDF-based **Process Knowledge Graph**, which the system uses for providing grounded explanations for decision support.
 
@@ -16,10 +16,10 @@ Generally, the application is split into four views relating to different tasks 
 
 ## Running the Application
 ### Prerequisites & Setup
-This project needs Python installed. We recommend version 3.12, but support 3.10 and 3.11 as well. 
+This project requires Python. We recommend version 3.12, but support 3.10 and 3.11 as well. Further, git lfs is needed for cloning the example use case data.
 
-First, clone this repository and navigate into the project folder. 
-We then strongly recommend to set up and use a [virtual environment](https://docs.python.org/3/library/venv.html), e.g., with 
+First, clone this repository and navigate into the project folder. If you want to use the example use case data, please also run `git lfs pull`.<br>
+We strongly recommend to further set up and use a [virtual environment](https://docs.python.org/3/library/venv.html), e.g., with 
 ``` bash
 python3 -m venv .venv
 ```
@@ -35,7 +35,7 @@ You can now run Karibdis.
 ### Quick-start
 To simply run Karibids as a web application, execute the following command from within the repository folder:
 ``` bash
-voila .\karibdis.ipynb
+voila karibdis.ipynb
 ```
 This runs the application at localhost. It should open automatically in your browser, otherwise navigate to [localhost:8866](http://localhost:8866/) manually. 
 After a short loading screen, the application will be visible and ready to use.
