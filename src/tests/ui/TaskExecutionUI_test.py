@@ -293,4 +293,3 @@ def _assign_activity_to_task(pkg, engine, task_uri, activity_curie):
     # assign activity to undecided task
     activity = pkg.namespace_manager.expand_curie(activity_curie)
     pkg.add((task_uri, BPO.instanceOf, activity))
-    engine.deduce()
