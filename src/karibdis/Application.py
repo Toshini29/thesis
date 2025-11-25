@@ -31,6 +31,7 @@ class JupyterApplication(ipywidgets.Box):
     def __init__(self, system=KnowledgeGraphBPMS()):
         super().__init__()
         self.system = system
+        self.layout = ipywidgets.Layout(width='99vw', height='99vh')
 
     def display(self, obj):
         for child in self.children:
@@ -49,7 +50,7 @@ class JupyterApplication(ipywidgets.Box):
         root.layout = ipywidgets.Layout(width='100%', height='100%')
         root.children = [tab[1] for tab in tabs]
         for tab in root.children:
-            tab.layout = ipywidgets.Layout(width='100%', height='60vh')
+            tab.layout = ipywidgets.Layout(width='100%')
         root.titles = [tab[0] for tab in tabs]
         return root
 
@@ -130,7 +131,7 @@ def ActiveImportUI(source, set_source, pkg):
     with w.Box(): # Needs its own box, as otherwise would lead to a whole reload of normal view, which leads to loss of data
         if is_processing:
             w.Label(value="PROCESSING") # TODO nice loading wheel that blocks inputs
-    with v.Card(layout = ipywidgets.Layout(width='100%', height='98%')): 
+    with v.Card(layout = ipywidgets.Layout(width='100%', height='100%')): 
         title, set_title = reacton.use_state('')
         subtitle, set_subtitle = reacton.use_state('')
         v.CardTitle(children=title)
@@ -268,7 +269,7 @@ def EventLogExtractionUI(importer, set_subtitle, be_busy_with, run_extraction):
         if not dirty:
             with w.VBox():
                 #grid = w.GridspecLayout(n_rows=len(log.columns), n_columns=2)
-                grid = w.Layout(grid_template_columns='1fr 1fr 1fr')
+                grid = w.Layout(grid_template_columns='1fr 1fr 1fr', width='fit-content')
                 with w.GridBox(layout=grid):
                     w.Label(value='Attribute') 
                     w.Label(value='Column Type') 
@@ -814,7 +815,7 @@ def SelectionMenu(title, items, set_items, reload, item_label, make_item_view, i
                 else:
                     w.Label(value='Nothing to select')
                     
-        w.Button(description='Reload', on_click=reload)
+        w.Button(description='Reload', on_click=reload, layout=w.Layout(flex='0 0 auto'))
     return main
 
 
@@ -866,7 +867,7 @@ WHERE {
 
     def run_query():
         query_result = graph.query(query)
-        print(query_result)
+        # print(query_result)
         set_current_result_size(len(query_result))
         set_dirty(False)
         set_current_result(query_result)
