@@ -502,7 +502,8 @@ def DecisionUI(engine):
             reload, 
             decision_label ,  
             make_decision_view, 
-            item_equality=lambda decision_a, decision_b : decision_a.subject == decision_b.subject
+            item_equality=lambda decision_a, decision_b : decision_a.subject == decision_b.subject,
+            collection_name='Decisions'
         )
     return main
 
@@ -540,9 +541,10 @@ def DecisionBody(engine, current_decision, reload):
     context_case = current_decision.context.get('case', None)
     context_type = current_decision.context.get('target_type', None)
     with w.VBox(layout=w.Layout(overflow='scroll', height='60vh', width='100%')) as main:
-        v.CardTitle(children=f' Decide {engine.pkg.label(context_type)}' + (f' for {engine.pkg.label(context_case)}' if context_case else ''))
         options, set_options = reacton.use_state([])
         reacton.use_effect(lambda: set_options(current_decision.get_top_k_results(20)), [current_decision])
+        v.CardTitle(children=f' Decide {engine.pkg.label(context_type)}' + (f' for {engine.pkg.label(context_case)}' if context_case else ''), layout=w.Layout(flex='0 0 auto'))
+
         for score, option, reasoning in options:
             with w.VBox(layout=w.Layout(border='solid #FAFAFA', margin='0.2%', padding='0.1%', flex='0 0 auto')):  
                 v.Label(children=f'{engine.pkg.label(option)} ({score})', style=LabelStyle(font_weight='bold', width='100%'))
@@ -613,7 +615,8 @@ def TaskExecutionUI(engine):
             set_tasks, 
             reload, 
             task_label ,  
-            make_task_view
+            make_task_view,
+            collection_name='Tasks'
         )
     return main
 
@@ -670,10 +673,13 @@ def TaskBody(engine, current_task_case, reload):
         else:
             return compute_default_for(attr)
         
+    def options_for_entity_pv_type(pv_type):
+        return pkg.subjects(predicate=RDF.type / (RDFS.subClassOf*ZeroOrMore), object=pv_type)
+        
     def compute_default_for(attr):
         attr_type = next(pkg.objects(predicate=BPO.dataType, subject=attr))
         if attr_type not in XSD:
-            option_0 = next(pkg.subjects(predicate=RDF.type / (RDFS.subClassOf*ZeroOrMore), object=attr_type), None)
+            option_0 = next(options_for_entity_pv_type(attr_type), None)
             return option_0 if option_0 else None
         if attr_type == XSD.integer:
             return 0
@@ -699,11 +705,11 @@ def TaskBody(engine, current_task_case, reload):
             w.Label(value='Value')
             w.Label(value='Type')
             for attr in attributes_to_show:
-                attr_name = next(pkg.objects(predicate=RDFS.label, subject=attr), uri_to_id(attr))
+                attr_name = pkg.label(attr)
                 attr_type = next(pkg.objects(predicate=BPO.dataType, subject=attr), None)
                 default_value = attribute_values.get(attr, load_existing_value_for(attr))
                 if attr_type not in XSD:
-                    options = list(pkg.subjects(predicate=RDF.type, object=attr_type))
+                    options = list(options_for_entity_pv_type(attr_type))
                     labels = [str(pkg.label(option)) for option in options]
                     dropdown_options = list(zip(labels, options))
                     widget = w.Dropdown(value=default_value, options=dropdown_options, layout=layout, on_value=on_widget_change(attr))
@@ -771,7 +777,7 @@ def AddProcessValueUI(pkg, attributes, add_pv_to_task):
 # =========================== UTILS ===========================
 
 @reacton.component
-def SelectionMenu(title, items, set_items, reload, item_label, make_item_view, item_equality = lambda a,b : a is b):
+def SelectionMenu(title, items, set_items, reload, item_label, make_item_view, item_equality = lambda a,b : a is b, collection_name='items'):
     with w.VBox() as main:
         
         with v.Card(): 
@@ -790,9 +796,9 @@ def SelectionMenu(title, items, set_items, reload, item_label, make_item_view, i
                                 )
                         make_item_view(current_item)
                 else:
-                    w.Label(value='Nothing to select')
+                    w.Label(value=f'No {collection_name} to select')
                     
-        w.Button(description='Reload', on_click=reload, layout=w.Layout(flex='0 0 auto'))
+        w.Button(description=f'Reload {collection_name}', on_click=reload, layout=w.Layout(flex='0 0 auto'))
     return main
 
 
