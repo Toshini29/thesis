@@ -20,6 +20,7 @@ from karibdis.KnowledgeGraphBPMS import KnowledgeGraphBPMS
 from karibdis.KnowledgeImporter import KnowledgeImporter, TextualImporter, SimpleEventLogImporter, ExistingOntologyImporter
 import datetime
 from rdflib import Literal, RDFS, XSD
+from rdflib.paths import ZeroOrMore
 from karibdis.utils import BASE_PROCESS_ONTOLOGY as BPO
 
 
@@ -592,203 +593,179 @@ def GraphExplorationUI(graph): # TODO don't populate until shown
 
 
 @reacton.component
-def TaskExecutionUI(engine): # TODO refactor to use SelectionMenu like DecisionUI
-    attribute_values, set_attribute_values = reacton.use_state({})
-    with w.VBox() as main:
-        v.CardTitle(children='Task Execution')
-        tasks, set_tasks = reacton.use_state(list(engine.open_tasks()))
+def TaskExecutionUI(engine): 
+    tasks, set_tasks = reacton.use_state(list(engine.open_tasks()))
+    def reload():
+        set_tasks(list(engine.open_tasks()))
 
-        def reload():
-            set_tasks(list(engine.open_tasks()))
-            set_attribute_values({})  # Reset form fields
-                
-        with w.VBox():
-            if len(tasks) > 0:
-                TaskBody(tasks, engine, reload, attribute_values, set_attribute_values)
-            else: 
-                w.Label(value="No open tasks.")
-            w.Button(description="Reload Tasks", on_click=lambda *args: reload(), layout=w.Layout(flex='0 0 auto'))
-            
+    def task_label(task):
+        return engine.pkg.label(task[0])
+
+    def make_task_view(task):
+        return TaskBody(engine, task, reload)
+    
+    with w.VBox() as main:
+        with w.HBox():
+            w.Button(description="Open new case", on_click=lambda: (engine.open_new_case(), reload()))
+        SelectionMenu(
+            "Task Execution", 
+            tasks, 
+            set_tasks, 
+            reload, 
+            task_label ,  
+            make_task_view
+        )
     return main
 
-@reacton.component
-def TaskBody(tasks, engine, reload, attribute_values, set_attribute_values):
-    pkg = engine.pkg
-    current_task, set_current_task = reacton.use_state(tasks[0][0])
-    current_case, set_current_case = reacton.use_state(tasks[0][1])
-    reacton.use_effect(lambda: set_current_task(tasks[0][0]), [tasks])
-    reacton.use_effect(lambda: set_current_case(tasks[0][1]), [tasks])
 
-     
-    submit_clicked, set_submit_clicked = reacton.use_state(False)
+@reacton.component
+def TaskBody(engine, current_task_case, reload):
+    pkg = engine.pkg
+
+    current_task, current_case = current_task_case
+
+    attribute_values, set_attribute_values = reacton.use_state({})
+    reacton.use_effect(lambda: set_attribute_values({}), [current_task_case])
     
     # React hook for values not needed for rendering
     task_added_pvs = reacton.use_ref([])
     
     # Reset when task changes
-    reacton.use_effect(lambda: task_added_pvs.current.clear(), [current_task])
+    reacton.use_effect(lambda: task_added_pvs.current.clear(), [current_task_case])
+
+    activity = next(pkg.objects(predicate = BPO.instanceOf, subject = current_task), None)
+    attributes_to_show, set_attributes_to_show = reacton.use_state([])
+    reacton.use_effect(lambda: set_attributes_to_show(list(pkg.objects(subject=activity, predicate=BPO.writesValue))), [current_task_case])
+
+    def add_pv_to_task(pv):
+        if pv not in attributes_to_show:
+            set_attributes_to_show(attributes_to_show + [pv])
     
-    with w.HBox() as main:
-        activity = next(pkg.objects(predicate = BPO.instanceOf, subject = current_task), None)
-       
-        activity_attrs = list(pkg.objects(subject=activity, predicate=BPO.writesValue))
-        case_attrs = [pv for pv in task_added_pvs.current if pv not in activity_attrs]
-        attributes = activity_attrs + case_attrs
-        
-        def add_pv_to_task(pv):
-            if pv not in task_added_pvs.current:
-                task_added_pvs.current.append(pv)
-        
-        def on_submit_click():
-            # iterate over all expected attributes (use compute_default_for when missing)
-            for attr in attributes:
-                attr_type = next(pkg.objects(predicate=BPO.dataType, subject=attr), None)
-                # use stored value or compute a default now
-                val = attribute_values.get(attr)
-                if val is None:
-                    val = load_existing_value_for(attr) 
-                if val is None:
-                    val = compute_default_for(attr)
-                    
-                is_entity = attr_type is not None and not str(attr_type).startswith(str(XSD._NS))
-                           
+    def on_submit_click():
+        # iterate over all expected attributes (use compute_default_for when missing)
+        for attr in attributes_to_show:
+            attr_type = next(pkg.objects(predicate=BPO.dataType, subject=attr), None)
+            # use stored value or compute a default now
+            val = attribute_values.get(attr)
+            if val is None:
+                val = load_existing_value_for(attr) 
+            if val is None:
+                val = compute_default_for(attr)
+                
+            is_entity = attr_type is not None and not str(attr_type).startswith(str(XSD._NS))
+            if val is not None:                        
                 if is_entity:
                     pkg.set((current_case, attr, val))
                 else:
                     lit = Literal(val, datatype=attr_type if attr_type is not None else None)
                     pkg.set((current_case, attr, lit))
                     
-            engine.complete_task(current_task)
-            reload()
-            set_submit_clicked(True)
-
-        reacton.use_effect(lambda: set_submit_clicked(False), [current_task])
+        engine.complete_task(current_task)
+        reload()
+    
+    def load_existing_value_for(attr):
+        existing = pkg.value(subject=current_case, predicate=attr)
+        if existing is not None:
+            return existing.toPython() if isinstance(existing, Literal) else existing
+        else:
+            return compute_default_for(attr)
         
-        
-        with w.VBox():
-            for task, case in tasks:
-                w.Button(description=f"Task: {pkg.label(task)} - Case: {pkg.label(case)}", on_click=lambda t=task, c=case: (set_current_task(t), set_current_case(c)), style=w.ButtonStyle(button_color='#DDEEFF' if task == current_task else None))
-        
-        def load_existing_value_for(attr):
-            existing = pkg.value(subject=current_case, predicate=attr)
-            if existing is not None:
-                return existing.toPython() if isinstance(existing, Literal) else existing
-            else:
-                return compute_default_for(attr)
+    def compute_default_for(attr):
+        attr_type = next(pkg.objects(predicate=BPO.dataType, subject=attr))
+        if attr_type not in XSD:
+            option_0 = next(pkg.subjects(predicate=RDF.type / (RDFS.subClassOf*ZeroOrMore), object=attr_type), None)
+            return option_0 if option_0 else None
+        if attr_type == XSD.integer:
+            return 0
+        if attr_type == XSD.float:
+            return 0.0
+        if attr_type == XSD.boolean:
+            return False
+        return ""
+    
+    layout= w.Layout(description_width="initial")
+    
+    def on_widget_change(attr):
+        def handler(new_value):
+            set_attribute_values(lambda prev: {**(prev or {}), attr: new_value})
+        return handler
+    
+    with w.VBox() as main:  
+        v.CardTitle(children=f'{pkg.label(activity)} for {engine.pkg.label(current_case)}')
+        grid = w.Layout(grid_template_columns='1fr 1fr 1fr', grid_gap='8px')
+        with w.GridBox(layout=grid):
+            # header row
+            w.Label(value='Attribute')
+            w.Label(value='Value')
+            w.Label(value='Type')
+            for attr in attributes_to_show:
+                attr_name = next(pkg.objects(predicate=RDFS.label, subject=attr), uri_to_id(attr))
+                attr_type = next(pkg.objects(predicate=BPO.dataType, subject=attr), None)
+                default_value = attribute_values.get(attr, load_existing_value_for(attr))
+                if attr_type not in XSD:
+                    options = list(pkg.subjects(predicate=RDF.type, object=attr_type))
+                    labels = [str(pkg.label(option)) for option in options]
+                    dropdown_options = list(zip(labels, options))
+                    widget = w.Dropdown(value=default_value, options=dropdown_options, layout=layout, on_value=on_widget_change(attr))
+                    type_label = pkg.label(attr_type)
+                elif attr_type == XSD.string:
+                    widget = w.Text(value=default_value, layout=layout, on_value=on_widget_change(attr))
+                    type_label = 'string'
+                elif attr_type == XSD.integer:
+                    widget = w.IntText(value=default_value, layout=layout, on_value=on_widget_change(attr))
+                    type_label = 'integer'
+                elif attr_type == XSD.float:
+                    widget = w.FloatText(value=default_value, layout=layout, on_value=on_widget_change(attr))
+                    type_label = 'float'
+                elif attr_type == XSD.boolean:
+                    widget = w.Checkbox(value=default_value, on_value=on_widget_change(attr))
+                    type_label = 'boolean'
+                else:
+                    widget = w.Text(value=default_value, layout=layout, on_value=on_widget_change(attr, None))
+                    type_label = 'string'
+                
+                w.Label(value=attr_name)
+                w.Box(children=[widget])
+                w.Label(value=type_label)
+                
             
-        def compute_default_for(attr):
-            attr_type = next(pkg.objects(predicate=BPO.dataType, subject=attr))
-            if attr_type not in XSD:
-                option_0 = next(pkg.subjects(predicate=RDF.type, object=attr_type))
-                return option_0 if option_0 else None
-            if attr_type == XSD.integer:
-                return 0
-            if attr_type == XSD.float:
-                return 0.0
-            if attr_type == XSD.boolean:
-                return False
-            return ""
-        
-        layout= w.Layout(description_width="initial")
-        
-        def on_widget_change(attr):
-            def handler(new_value):
-                set_attribute_values(lambda prev: {**(prev or {}), attr: new_value})
-            return handler
-        
-        with w.VBox():  
-            v.CardTitle(children=f'{pkg.label(activity)} for {engine.pkg.label(current_case)}')
-            grid = w.Layout(grid_template_columns='1fr 1fr 1fr', grid_gap='8px')
-            with w.GridBox(layout=grid):
-                # header row
-                w.Label(value='Attribute')
-                w.Label(value='Value')
-                w.Label(value='Type')
-                for attr in attributes:
-                    attr_name = next(pkg.objects(predicate=RDFS.label, subject=attr), uri_to_id(attr))
-                    attr_type = next(pkg.objects(predicate=BPO.dataType, subject=attr), None)
-                    default_value = attribute_values.get(attr, load_existing_value_for(attr))
-                    if attr_type not in XSD:
-                        options = list(pkg.subjects(predicate=RDF.type, object=attr_type))
-                        labels = [str(pkg.label(option)) for option in options]
-                        dropdown_options = list(zip(labels, options))
-                        widget = w.Dropdown(value=default_value, options=dropdown_options, layout=layout, on_value=on_widget_change(attr))
-                        type_label = pkg.label(attr_type)
-                    elif attr_type == XSD.string:
-                        widget = w.Text(value=default_value, layout=layout, on_value=on_widget_change(attr))
-                        type_label = 'string'
-                    elif attr_type == XSD.integer:
-                        widget = w.IntText(value=default_value, layout=layout, on_value=on_widget_change(attr))
-                        type_label = 'integer'
-                    elif attr_type == XSD.float:
-                        widget = w.FloatText(value=default_value, layout=layout, on_value=on_widget_change(attr))
-                        type_label = 'float'
-                    elif attr_type == XSD.boolean:
-                        widget = w.Checkbox(value=default_value, on_value=on_widget_change(attr))
-                        type_label = 'boolean'
-                    else:
-                        widget = w.Text(value=default_value, layout=layout, on_value=on_widget_change(attr, None))
-                        type_label = 'string'
-                    
-                    w.Label(value=attr_name)
-                    w.Box(children=[widget])
-                    w.Label(value=type_label)
-                    
-            add_instance_open, set_add_instance_open = reacton.use_state(False)
-             
-            w.Button(description="Add new ProcessValue", on_click=lambda *_: set_add_instance_open(True))
-            AddProcessValueUI(engine, pkg, current_case, attributes, add_instance_open, set_add_instance_open, compute_default_for, add_pv_to_task)
-            w.Button(description="Submit", on_click=on_submit_click, layout=w.Layout(flex='0 0 auto'))
+        AddProcessValueUI(pkg, attributes_to_show, add_pv_to_task) # TODO compute default should need to be a parameter?
+        w.Button(description="Submit", on_click=on_submit_click, layout=w.Layout(flex='0 0 auto'))
                 
     return main
+
 @reacton.component
-def AddProcessValueUI(engine, pkg, current_case, attributes, open, set_open, compute_default_for, add_pv_to_task):
+def AddProcessValueUI(pkg, attributes, add_pv_to_task):
     
-    selected_pv_label, set_selected_pv_label = reacton.use_state(None)
+    open, set_open = reacton.use_state(False)
 
     # collect available PVs that are not already in attributes
     all_pvs = list(pkg.subjects(predicate=RDF.type, object=BPO.ProcessValue))
-    remaining_pvs = [pv for pv in all_pvs if pv not in attributes]
+    reacton.use_effect(lambda: set_open(False), [attributes])
+    remaining_options, set_remaingin_options = reacton.use_state([])
     # options as (label, pv) pairs
-    remaining_options = [(pkg.label(pv), pv) for pv in remaining_pvs]
+    reacton.use_effect(lambda : set_remaingin_options([(pkg.label(pv), pv) for pv in all_pvs if pv not in attributes]), [attributes])
 
     with w.VBox() as main:
-        if open and remaining_options:
+        if len(remaining_options) == 0:
+            w.Label(value="No other ProcessValues available to add.")
+        elif not open:
+            w.Button(description="Add new ProcessValue", on_click=lambda *_: set_open(True))
+        else:
+            selected_pv, set_selected_pv = reacton.use_state(remaining_options[0][1])
             w.Label(value="Add a new ProcessValue to this case")
-            
-            if selected_pv_label is None:
-                set_selected_pv_label(remaining_options[0][0])
+            w.Dropdown( options=remaining_options, value=selected_pv, on_value=set_selected_pv)
 
-            options_labels = [label for label, _ in remaining_options]
-            w.Dropdown(options=options_labels, value=selected_pv_label, on_value=set_selected_pv_label)
-
-            # map selected label back to pv
-            sel_pv = next((pv for label, pv in remaining_options if label == selected_pv_label), None)
-            sel_dtype = next(pkg.objects(predicate=BPO.dataType, subject=sel_pv), None) if sel_pv is not None else None
             
             def _add_to_pkg(b=None):
-                if sel_pv is None:
-                    print("No ProcessValue selected")
-                    return
-                elif sel_dtype not in XSD:
-                    val = compute_default_for(sel_pv)
-                else:
-                    val = Literal(compute_default_for(sel_pv), datatype=sel_dtype)
-                
-                pkg.add((current_case, sel_pv, val))
-                add_pv_to_task(sel_pv)
-                engine.deduce()
-                
+                to_add = selected_pv
                 set_open(False)
-                set_selected_pv_label(None)
-
+                set_selected_pv(None)
+                add_pv_to_task(to_add)
+                
             with w.HBox():
                 w.Button(description="Create", on_click=_add_to_pkg)
                 w.Button(description="Cancel", on_click=lambda *_: set_open(False))
-    
-        elif open and not remaining_options:
-            w.Label(value="No other ProcessValues available to add.")
-            set_open(False)
     return main
 
 # =========================== UTILS ===========================
