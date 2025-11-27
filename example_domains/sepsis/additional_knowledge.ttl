@@ -10,6 +10,22 @@
     rdfs:label "Patient Name" ;
     :dataType xsd:string .
 
+
+:SetCaseNameRule a sh:NodeShape ;
+    sh:targetClass :Case ;
+    sh:rule [
+        a sh:SPARQLRule ;
+        sh:construct """
+            CONSTRUCT {
+                ?this rdfs:label ?caselabel .
+            } WHERE {
+                ?this :ProcessValue_Name ?name .
+                FILTER NOT EXISTS { ?this rdfs:label ?existingLabel. } .
+                BIND(CONCAT("Patient ", STR( ?name )) AS ?caselabel ) .
+            }
+        """ ;
+    ] .
+
 log:Activity_ER%20Registration :writesValue :ProcessValue_Name .
 
 
@@ -54,7 +70,7 @@ log:Activity_ER%20Registration :writesValue :ProcessValue_Name .
 
 
 :ProcessValue_Disease a :ProcessValue ;
-    rdfs:label "Diagniosed Disease" ;
+    rdfs:label "Diagnosed Disease" ;
     :dataType <http://purl.obolibrary.org/obo/MONDO_0700096> . # Human Disease
 
 :inducesHighRisk a owl:ObjectProperty ;
@@ -80,6 +96,21 @@ log:Activity_ER%20Registration :writesValue :ProcessValue_Name .
             }
         """ ;
     ] .
+
+:normal_min a owl:DatatypeProperty ;
+    rdfs:label "Minimum of normal value range" ;
+    rdfs:domain :ProcessValue ;
+    rdfs:range xsd:float .
+
+:normal_max a owl:DatatypeProperty ;
+    rdfs:label "Maximum of normal value range" ;
+    rdfs:domain :ProcessValue ;
+    rdfs:range xsd:float .
+
+:abnormalValueFor a owl:ObjectProperty ;
+    rdfs:label "has abnormal value for" ;
+    rdfs:domain [ a owl:Class ; owl:unionOf ( :Task :Case ) ] ;
+    rdfs:range :ProcessValue .
 
 
 :MeasurementOutOfBounds a sh:NodeShape ;
@@ -124,7 +155,7 @@ log:ProcessValue_Leucocytes
     rdfs:range :Activity .
 
 <http://purl.obolibrary.org/obo/MONDO_0043726> # Organ Failure
-    :requiresAsPreventiveTreatment log:Activity_Admission%20NC .
+    :requiresAsPreventiveTreatment log:Activity_Admission%20IC .
 
 
 :PerformPreventiveTreatment a sh:PropertyShape ;
@@ -143,5 +174,62 @@ log:ProcessValue_Leucocytes
                 ?reason :inducesHighRisk ?disease .
             }
             GROUP BY $this ?disease
+        """ ;
+    ] .
+
+
+:AdmitSepsisPatientsRule a sh:PropertyShape ;
+    sh:targetClass :Task ;
+    sh:path :instanceOf__hypothetical;
+    sh:severity sh:Info;
+    sh:sparql [
+        a sh:SPARQLConstraint ;
+        sh:message "Patients diagnosed with sepsis should be admitted to the hospital." ;
+        sh:select """
+            SELECT  $this (5 AS ?value)
+            WHERE {
+                $this :instanceOf__hypothetical ?activity .
+                FILTER(?activity IN (log:Activity_Admission%20IC, log:Activity_Admission%20NC)) .
+                $this :partOf / :ProcessValue_Disease <http://purl.obolibrary.org/obo/MONDO_1040015> . # Sepsis
+            }
+        """ ;
+    ] .
+
+:DontReleaseSepsisPatientsRule a sh:PropertyShape ;
+    sh:targetClass :Task ;
+    sh:path :instanceOf__hypothetical;
+    sh:severity sh:Info;
+    sh:sparql [
+        a sh:SPARQLConstraint ;
+        sh:message "Patients diagnosed with sepsis should not be released without prior admittance to the hospital." ;
+        sh:select """
+            SELECT  $this (-3 AS ?value)
+            WHERE {
+                $this :instanceOf__hypothetical ?activity .
+                ?activity rdfs:label ?label .
+                FILTER regex(?label, "^Release", "i") .
+                $this :partOf / :ProcessValue_Disease <http://purl.obolibrary.org/obo/MONDO_1040015> . # Sepsis
+                FILTER NOT EXISTS {
+                    $this :partOf / ^:partOf / :instanceOf ?otheractivity .
+                    FILTER(?otheractivity IN (log:Activity_Admission%20IC, log:Activity_Admission%20NC)) .
+                }
+            }
+        """ ;
+    ] .
+    
+:CloseReleasedPatientCasesRule a sh:NodeShape ;
+    sh:targetClass :Case ;
+    sh:rule [
+        a sh:SPARQLRule ;
+        sh:construct """
+            CONSTRUCT {
+                ?this :isClosed True . 
+            } WHERE {
+                ?task :partOf? ?this.
+                ?task :instanceOf ?activity.
+                ?activity rdfs:label ?label .
+                FILTER regex(?label, "^Release", "i") .
+                ?task :completedAt ?time .
+            }
         """ ;
     ] .
