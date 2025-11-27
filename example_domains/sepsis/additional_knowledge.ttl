@@ -69,6 +69,14 @@ log:Activity_ER%20Registration :writesValue :ProcessValue_Name .
     ] .
 
 
+# Diseases are only present as subclasses, not as instances, so make them instances of themselves
+<http://purl.obolibrary.org/obo/MONDO_0004805> rdf:type <http://purl.obolibrary.org/obo/MONDO_0004805> . # Leukocyte disorder
+<http://purl.obolibrary.org/obo/MONDO_0005015> rdf:type <http://purl.obolibrary.org/obo/MONDO_0005015> . # Diabetes mellitus
+<http://purl.obolibrary.org/obo/MONDO_0043726> rdf:type <http://purl.obolibrary.org/obo/MONDO_0043726> . # Organ Failure
+<http://purl.obolibrary.org/obo/MONDO_1040015> rdf:type <http://purl.obolibrary.org/obo/MONDO_1040015>. # Sepsis
+
+
+
 :ProcessValue_Disease a :ProcessValue ;
     rdfs:label "Diagnosed Disease" ;
     :dataType <http://purl.obolibrary.org/obo/MONDO_0700096> . # Human Disease
