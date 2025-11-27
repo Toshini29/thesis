@@ -16,7 +16,7 @@ Generally, the application is split into four views relating to different tasks 
 
 ## Running the Application
 ### Prerequisites & Setup
-This project requires Python. We recommend version 3.12, but support 3.10 and 3.11 as well. Further, git lfs is needed for cloning the example use case data.
+This project requires Python. We recommend version 3.12, but support 3.10 and 3.11 as well. Further, git lfs is needed for cloning the example use case data. Further, for the textual knowledge importer, GPT is used. If you want to use this importer, please provide an `OPENAI_API_KEY` via the environment (e.g., through a `.env` file).
 
 First, clone this repository and navigate into the project folder. If you want to use the example use case data, please also run `git lfs pull`.<br>
 We strongly recommend to further set up and use a [virtual environment](https://docs.python.org/3/library/venv.html), e.g., with 
