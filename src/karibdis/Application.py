@@ -6,6 +6,7 @@ from IPython.display import display, clear_output, Javascript
 
 import uuid
 
+from pyparsing import ParseException
 import reacton
 import reacton.ipywidgets as w
 import reacton.ipyvuetify as v
@@ -834,6 +835,7 @@ WHERE {
 } 
 '''  
     current_result, set_current_result = reacton.use_state(None)
+    error_msg, set_error_msg = reacton.use_state('')
     current_result_size, set_current_result_size = reacton.use_state(0)
     dirty, set_dirty = reacton.use_state(True)
     query, _set_query = reacton.use_state(initial_query if initial_query else default_initial_query) 
@@ -841,19 +843,28 @@ WHERE {
         set_dirty(True)
         _set_query(value)  
 
-    place_box = lambda : w.Textarea(
-        layout = w.Layout(width='98%'),
-        value = query,
-        on_value=set_query,
-        rows = len(query.split('\n')) + 2
-    )
+    def place_box():
+        with w.VBox():
+            if error_msg:
+                w.Label(value=f'Error: {error_msg}', style=LabelStyle(text_color='red')) 
+            w.Textarea(
+                layout = w.Layout(width='98%'),
+                value = query,
+                on_value=set_query,
+                rows = len(query.split('\n')) + 2
+            )
 
     def run_query():
-        query_result = graph.query(query)
+        try:
+            query_result = graph.query(query)
+            set_current_result_size(len(query_result))
+            set_dirty(False)
+            set_current_result(query_result)
+            set_error_msg('')
+        except ParseException as e:
+            set_error_msg('Invalid Query')
+            print(e)
         # print(query_result)
-        set_current_result_size(len(query_result))
-        set_dirty(False)
-        set_current_result(query_result)
 
     return place_box, current_result, current_result_size, dirty, run_query
 
