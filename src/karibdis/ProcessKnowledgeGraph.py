@@ -18,7 +18,25 @@ class ProcessKnowledgeGraph(Graph):
         return set(self.objects(predicate=~BPO.partOf)) - set(self.subjects(predicate=BPO.performedBy))
 
     def available_resources(self):
-        return set(self.subjects(predicate=BPO.isAvailable, object=Literal(True)))
+        # return set(self.subjects(predicate=BPO.isAvailable, object=Literal(True)))
+        # TODO implement more sophisticated version than "just isn't busy atm"
+        available_resources_query = """
+            PREFIX : <http://infs.cit.tum.de/karibdis/baseontology/>
+
+            SELECT ?resource
+            WHERE {
+                ?resource a :Resource .
+                FILTER NOT EXISTS { 
+                    ?task :performedBy ?resource .  
+                    FILTER NOT EXISTS { 
+                        ?task :completedAt ?anyTime .  
+                    }
+                }
+            }"""
+
+        for resource_tuple in self.query(available_resources_query):
+            yield resource_tuple[0]
+    
         
     def valid_resources(self, task_node):
         return set(self.objects(subject=task_node, predicate=BPO.instanceOf / BPO.canBeExecutedBy)) # TODO use rule engine

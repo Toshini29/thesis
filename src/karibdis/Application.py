@@ -503,7 +503,7 @@ def DecisionUI(engine):
             reload, 
             decision_label ,  
             make_decision_view, 
-            item_equality=lambda decision_a, decision_b : decision_a.subject == decision_b.subject,
+            item_equality=lambda decision_a, decision_b : (decision_a.subject == decision_b.subject) and (decision_a.predicate == decision_b.predicate),
             collection_name='Decisions'
         )
     return main
@@ -541,10 +541,11 @@ def visualize_addition_graph(importer): # TODO Partial duplicate to GraphViz
 def DecisionBody(engine, current_decision, reload):
     context_case = current_decision.context.get('case', None)
     context_type = current_decision.context.get('target_type', None)
+    label_context = current_decision.context.get('label_context', None)
     with w.VBox(layout=w.Layout(overflow='scroll', height='60vh', width='100%')) as main:
         options, set_options = reacton.use_state([])
         reacton.use_effect(lambda: set_options(current_decision.get_top_k_results(20)), [current_decision])
-        v.CardTitle(children=f' Decide {engine.pkg.label(context_type)}' + (f' for {engine.pkg.label(context_case)}' if context_case else ''), layout=w.Layout(flex='0 0 auto'))
+        v.CardTitle(children=f' Decide {engine.pkg.label(context_type)}' + (f' for {engine.pkg.label(context_case)}' if context_case else '') + (f' {label_context}' if label_context else ''), layout=w.Layout(flex='0 0 auto'))
 
         for score, option, reasoning in options:
             with w.VBox(layout=w.Layout(border='solid #FAFAFA', margin='0.2%', padding='0.1%', flex='0 0 auto')):  

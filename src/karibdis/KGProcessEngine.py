@@ -96,7 +96,29 @@ class KGProcessEngine:
         open_next_activities = self.pkg.query(open_next_activities_query)
         for task, case in open_next_activities:
             yield Decision(self, task, BPO.instanceOf, {'case' : case, 'target_type': BPO.Activity})
-    
+
+        
+        open_assignments_query = """
+            PREFIX : <http://infs.cit.tum.de/karibdis/baseontology/>
+
+            SELECT ?task ?case ?activity
+            WHERE {
+                ?case a :Case .
+                ?task :partOf ?case .
+                ?task :instanceOf ?activity .
+                ?activity :canBeExecutedBy ?anyResourceConstraint .
+                FILTER NOT EXISTS { ?task :performedBy ?anyResource }
+                FILTER NOT EXISTS { ?case :isClosed true}
+            }"""
+        
+        # TODO: Make dynamic based on whether the task actually needs assigned resources
+
+        open_assignments = self.pkg.query(open_assignments_query)
+        for task, case, activity in open_assignments:
+            yield Decision(self, task, BPO.performedBy, {'case' : case, 'target_type': BPO.Resource, 'label_context' : self.pkg.label(activity)})
+
+
+
     def handle_decision(self, decision_to_make, decision_result):
         print(f'Made decision {str(decision_to_make.subject)} --{str(decision_to_make.predicate)}--> {str(decision_result)}')
         triple_to_add = (decision_to_make.subject, decision_to_make.predicate, decision_result)
@@ -214,7 +236,7 @@ class Decision:
         if target_type == BPO.Activity:
             return list(self.engine.pkg.subjects(predicate=RDF.type, object=BPO.Activity))
         elif target_type == BPO.Resource:
-            return list(self.graph_to_check.available_resources()) # TODO method currently not implemented anymore
+            return list(self.graph_to_check.available_resources()) 
 
 
     def evaluate_option(self, option):

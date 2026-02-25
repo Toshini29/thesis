@@ -66,3 +66,40 @@ rules:lastCompleted
         }
         LIMIT 1
     """.
+
+rules:ExecutionPermissionConstraint a sh:PropertyShape ;
+    sh:targetClass :Task ;
+    sh:path :performedBy__hypothetical;
+    sh:sparql [
+        a sh:SPARQLConstraint ;
+        sh:message "The resource '{?resource}' is not allowed to perform the activity '{?activity}'" ;
+        sh:select """
+            SELECT $this ?activity ?resource
+            WHERE {
+                $this :performedBy__hypothetical ?resource .
+                $this :instanceOf ?activity .
+                FILTER NOT EXISTS { 
+                    ?resource :hasRole* / ^:canBeExecutedBy ?activity .
+                }
+            }
+        """ ;
+    ] .
+
+rules:ExecutionPermissionReward a sh:PropertyShape ;
+    sh:targetClass :Task ;
+    sh:path :performedBy__hypothetical;
+    sh:severity sh:Info;
+    sh:sparql [
+        a sh:SPARQLConstraint ;
+        sh:message "Resource has relevant role(s) for activity '{?activity}'" ;
+        sh:select """
+            SELECT $this ?activity ?resource (2 AS ?value)
+            WHERE {
+                $this :performedBy__hypothetical ?resource .
+                $this :instanceOf ?activity .
+                FILTER EXISTS { 
+                    ?resource :hasRole* / ^:canBeExecutedBy ?activity .
+                }
+            }
+        """ ;
+    ] .
