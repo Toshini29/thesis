@@ -5,7 +5,10 @@ from rdflib.namespace import Namespace, DefinedNamespace, ClosedNamespace
 from rdflib.term import URIRef
 from rdflib import Graph, OWL, RDF, RDFS, Literal, BNode
 import importlib.resources
-from sentence_transformers import CrossEncoder, SentenceTransformer, util
+
+from karibdis.util.async_import import async_import
+sentence_transformers = async_import("sentence_transformers")
+# from sentence_transformers import CrossEncoder, SentenceTransformer, util
 
 BASE_URL = 'http://infs.cit.tum.de/karibdis/'
 BASE_ONTOLOGY_FILE = importlib.resources.files('karibdis').joinpath('base_ontology.ttl')
@@ -198,13 +201,13 @@ def graph_alignment(addition_texts, target_texts):
     target_ids, target_texts_list = zip(*target_texts.items())
 
     # Fast BiEncoder Pre-ranking
-    bi_encoder = SentenceTransformer("all-MiniLM-L6-v2", cache_folder=LLM_CACHE_FOLDER)
+    bi_encoder = sentence_transformers.SentenceTransformer("all-MiniLM-L6-v2", cache_folder=LLM_CACHE_FOLDER)
     target_embeddings = bi_encoder.encode(target_texts_list, convert_to_tensor=True)
     source_embeddings = bi_encoder.encode(source_texts_list, convert_to_tensor=True)
-    cosine_scores = util.cos_sim(source_embeddings, target_embeddings)
+    cosine_scores = sentence_transformers.util.cos_sim(source_embeddings, target_embeddings)
 
     # High-quality CrossEncoder re-ranking
-    cross_encoder = CrossEncoder("cross-encoder/ms-marco-MiniLM-L-6-v2", cache_folder=LLM_CACHE_FOLDER)
+    cross_encoder = sentence_transformers.CrossEncoder("cross-encoder/ms-marco-MiniLM-L-6-v2", cache_folder=LLM_CACHE_FOLDER)
     def top_k_nodes(i, top_k=10, top_k_outer=20):
         source_id = source_ids[i]
         top_scores, top_indices = cosine_scores[i].topk(min(len(cosine_scores[i]), top_k_outer), sorted=True)

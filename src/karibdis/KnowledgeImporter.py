@@ -16,7 +16,10 @@ import textwrap
 import json 
 import uuid
 
-from langchain_openai import ChatOpenAI
+
+from karibdis.util.async_import import async_import
+langchain_openai = async_import("langchain_openai")
+
 from langchain_core.prompts import ChatPromptTemplate
 from dotenv import load_dotenv
 
@@ -159,7 +162,7 @@ class KnowledgeImporter(ABC):
         load_dotenv()
 
 
-        llm = ChatOpenAI(temperature=0, model="gpt-4o-mini")
+        llm = langchain_openai.ChatOpenAI(temperature=0, model="gpt-4o-mini")
         prompt = ChatPromptTemplate.from_messages(
             [
                 (
@@ -532,7 +535,7 @@ class TextualImporter(KnowledgeImporter):
     def __init__(self, pkg, llm=None):
         super().__init__(pkg)
         if llm is None:
-            llm = ChatOpenAI(temperature=0, model="gpt-4o-mini", max_tokens=None)
+            llm = langchain_openai.ChatOpenAI(temperature=0, model="gpt-4o-mini", max_tokens=None)
         self.llm = llm
 
     def import_content_from_statement(self, statement : str):
@@ -651,6 +654,8 @@ class ExistingOntologyImporter(KnowledgeImporter):
 
     
     def accept_filtered_result(self, result, ontology):
+        for alias, namespace in ontology.namespaces():
+            self.addition_graph.bind(alias, namespace)
         self.addition_graph += result
         # Add predicates metadata so annotation properties can be used
         predicates = set(self.addition_graph.predicates())

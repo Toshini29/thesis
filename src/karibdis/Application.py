@@ -12,7 +12,9 @@ import reacton.ipywidgets as w
 import reacton.ipyvuetify as v
 from ipywidgets.widgets.widget_string import LabelStyle
 
-import pm4py
+
+from karibdis.util.async_import import async_import
+pm4py = async_import("pm4py")
 import json
 
 from karibdis.ProcessKnowledgeGraph import ProcessKnowledgeGraph
@@ -33,7 +35,7 @@ class JupyterApplication(ipywidgets.Box):
     def __init__(self, system=KnowledgeGraphBPMS()):
         super().__init__()
         self.system = system
-        self.layout = ipywidgets.Layout(width='99vw', height='99vh')
+        self.layout = ipywidgets.Layout(width='100%', height='99vh')
 
     def display(self, obj):
         for child in self.children:
@@ -229,7 +231,7 @@ def EventLogExtractionUI(importer, set_subtitle, be_busy_with, run_extraction):
             filename = os.path.join(tempfile.gettempdir(), os.urandom(24).hex())
             with open(filename, 'wb') as f:
                 f.write(file.content)
-                _log = pm4py.read_xes(f.name) # TODO also support csv at some point
+                #_log = pm4py.read_xes(f.name) # TODO also support csv at some point
             set_log(_log)
         
         w.FileUpload(
@@ -303,7 +305,6 @@ def EventLogExtractionUI(importer, set_subtitle, be_busy_with, run_extraction):
         set_subtitle('Import Control Flow Constraints')
         DiscoveryUI(importer, log, run_extraction)
 
-from pm4py import discover_declare
 @reacton.component
 def DiscoveryUI(importer, log, run_extraction):
     declare, set_declare = reacton.use_state(None)
@@ -314,7 +315,7 @@ def DiscoveryUI(importer, log, run_extraction):
         
         def discover():
             # TODO take specified activity column (etc.) from importer
-            _declare = discover_declare(log, allowed_templates=allowed_templates, min_support_ratio=min_support_ratio, min_confidence_ratio=min_confidence_ratio)
+            #_declare = pm4py.discover_declare(log, allowed_templates=allowed_templates, min_support_ratio=min_support_ratio, min_confidence_ratio=min_confidence_ratio)
             set_declare(_declare)
 
         v.Slider(
